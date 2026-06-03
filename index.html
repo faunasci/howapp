@@ -361,6 +361,7 @@
     let activeCalls = {};       // peerId -> { pc, stream }
     let hostChanged = false;    // flag: did we become host after original host left?
     let hostPingTimer = null;   // Periodic ping to check if host is alive
+    let heartbeatInterval = null; // Keep DataChannel alive
     let typingTimer = null;
     let typingPeers = {};
     let recMedia = null;
@@ -527,10 +528,10 @@
             });
 
             myPeer.on('disconnected', () => {
-                console.log('Disconnected, reconnecting...');
+                console.log('Disconnected from signaling, reconnecting...');
                 setTimeout(() => {
-                    if (myPeer && !myPeer.disconnected && !myPeer.destroyed) {
-                        myPeer.connect();
+                    if (myPeer && !myPeer.destroyed) {
+                        myPeer.reconnect();
                     }
                 }, 2000);
             });
@@ -623,7 +624,10 @@
     }
 
     async function joinRoom() {
-        nickname = $('nickname').value.trim() || 'Anônimo';
+        const _nickFromUrl = new URLSearchParams(location.search).get('nick');
+        nickname = $('nickname').value.trim()
+            || (_nickFromUrl ? decodeURIComponent(_nickFromUrl).substring(0, 20).trim() : '')
+            || 'Anônimo';
         const input = $('room-link').value.trim();
         const id = extractRoomId(input);
         if (!id) {
@@ -664,6 +668,7 @@
         console.log('Incoming connection from member:', conn.peer);
 
         peers[conn.peer] = { nick: null, conn: conn, isMember: true };
+        updateOnline(); // Show the new connection immediately, even before handshake
 
         conn.on('data', (data) => {
             handleMessage(data, conn.peer, true);
@@ -704,6 +709,15 @@
                 roomId: roomId,
                 timestamp: Date.now()
             });
+            // Start heartbeat to keep DataChannel alive (prevents timeout after inactivity)
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = setInterval(() => {
+                if (conn.open) {
+                    try { conn.send({ type: 'ping', senderId: myId }); } catch(e) {}
+                } else {
+                    clearInterval(heartbeatInterval);
+                }
+            }, 20000);
         });
 
         conn.on('data', (data) => {
@@ -712,9 +726,10 @@
 
         conn.on('close', () => {
             console.log('Connection to host lost');
+            clearInterval(heartbeatInterval);
             // Try to reconnect after a delay
             setTimeout(() => {
-                if (myPeer && !myPeer.disconnected && !myPeer.destroyed && isHost === false) {
+                if (myPeer && !myPeer.destroyed && isHost === false) {
                     connectToHost();
                 }
             }, 3000);
@@ -722,8 +737,9 @@
 
         conn.on('error', (err) => {
             console.error('Host connection error:', err);
+            clearInterval(heartbeatInterval);
             setTimeout(() => {
-                if (myPeer && !myPeer.disconnected && !myPeer.destroyed && isHost === false) {
+                if (myPeer && !myPeer.destroyed && isHost === false) {
                     connectToHost();
                 }
             }, 5000);
@@ -1069,6 +1085,17 @@
                     }
                 }
                 break;
+
+            case 'ping':
+                // Respond to heartbeat ping to keep the DataChannel alive
+                if (isHost && peers[fromPeer]?.conn?.open) {
+                    try { peers[fromPeer].conn.send({ type: 'pong', senderId: myId }); } catch(e) {}
+                }
+                break;
+
+            case 'pong':
+                // Heartbeat response — no action needed
+                break;
         }
     }
 
@@ -1151,7 +1178,7 @@
         callActive = true;
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
                 video: type === 'video'
             });
             myStream = stream;
@@ -1209,8 +1236,14 @@
         activeCalls[targetId] = { pc, stream: stream };
 
         pc.ontrack = (event) => {
-            addRemoteVideo(targetId, event.streams[0]);
-            activeCalls[targetId].stream = event.streams[0];
+            const stream = event.streams[0];
+            activeCalls[targetId].stream = stream;
+            const existingVid = document.getElementById(`remote-video-${targetId}`);
+            if (existingVid) {
+                existingVid.srcObject = stream;
+            } else {
+                addRemoteVideo(targetId, stream);
+            }
         };
 
         pc.onicecandidate = (event) => {
@@ -1337,8 +1370,14 @@
         activeCalls[fromPeer] = { pc, peerId: fromPeer };
 
         pc.ontrack = (event) => {
-            addRemoteVideo(fromPeer, event.streams[0]);
-            activeCalls[fromPeer].stream = event.streams[0];
+            const stream = event.streams[0];
+            activeCalls[fromPeer].stream = stream;
+            const existingVid = document.getElementById(`remote-video-${fromPeer}`);
+            if (existingVid) {
+                existingVid.srcObject = stream;
+            } else {
+                addRemoteVideo(fromPeer, stream);
+            }
         };
 
         pc.onicecandidate = (event) => {
@@ -1818,9 +1857,7 @@
         const el = document.getElementById(`vscreen-${peerId}`);
         if (el) {
             const v = el.querySelector('video');
-            if (v && v.srcObject) {
-                v.srcObject.getTracks().forEach(t => t.stop());
-            }
+            if (v) { v.srcObject = null; }
             el.remove();
         }
     }
@@ -1878,9 +1915,7 @@
         const el = document.getElementById(`vcard-${peerId}`);
         if (el) {
             const v = el.querySelector('video');
-            if (v && v.srcObject) {
-                v.srcObject.getTracks().forEach(t => t.stop());
-            }
+            if (v) { v.srcObject = null; }
             el.remove();
         }
     }
@@ -2192,8 +2227,10 @@
     }
 
     function updateOnline() {
-        // Count members with known nicknames (excluding host)
-        const members = Object.values(peers).filter(p => p.nick && p.isMember).length;
+        // Host sees all isMember peers (conn exists); members see those with known nicks
+        const members = isHost
+            ? Object.values(peers).filter(p => p.isMember).length
+            : Object.values(peers).filter(p => p.isMember && p.nick).length;
         // Host counts self + members. Members count self + members + host.
         const total = isHost ? 1 + members : 1 + members + 1;
         $('online-count').textContent = `${total} online${total > 1 ? 's' : ''}`;
