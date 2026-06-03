@@ -1,0 +1,2275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HowApp</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" integrity="sha512-Y1p/STLW/B+l+MPJ5K5OdILMwJa2gMFXXmC/qsyDuGH9uc1MZMUo6/8YQUg9Ut4ns8KGCrCtt+58UwmNFFiVvA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+        :root {
+            --bg: #0b141a; --bg2: #111b24; --bg3: #1b2731; --bg4: #21303c;
+            --accent: #00a884; --accent2: #00d4a8; --text: #e9edef; --text2: #8696a0;
+            --sent: #005c4b; --received: #1b2731; --danger: #ea4b61; --border: #2a3942;
+            --green-light: #00e69b; --red: #ff4444;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        input, button { font-family: inherit; }
+
+        /* ===== SCREENS ===== */
+        #join-screen { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 16px; padding: 20px; background: linear-gradient(160deg, #0b141a 0%, #13212c 50%, #0b141a 100%); }
+        #join-screen.active { display: flex; }
+        #room-screen { display: none; flex-direction: column; height: 100vh; }
+        #room-screen.active { display: flex; }
+        #loading-screen { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 24px; }
+        #loading-screen.active { display: flex; }
+
+        /* ===== JOIN SCREEN ===== */
+        .logo { font-size: 72px; margin-bottom: 8px; animation: pulse 2.5s ease-in-out infinite; filter: drop-shadow(0 4px 20px rgba(0,168,132,0.3)); }
+        @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+        h1.title { font-size: 36px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight: 800; letter-spacing: -1px; }
+        .subtitle { color: var(--text2); font-size: 14px; margin-bottom: 4px; }
+        .tagline { color: var(--text2); font-size: 12px; opacity: 0.6; }
+
+        .join-card { background: var(--bg3); border-radius: 20px; padding: 28px; width: 100%; max-width: 400px; border: 1px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        .input-group { margin-bottom: 14px; }
+        .input-group label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); font-size: 15px; outline: none; transition: all 0.2s; }
+        input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,168,132,0.15); }
+        input::placeholder { color: var(--text2); opacity: 0.5; }
+
+        .btn { padding: 13px 24px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent2); box-shadow: 0 4px 16px rgba(0,168,132,0.3); }
+        .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--bg3); border-color: var(--text2); }
+        .btn-block { width: 100%; }
+        .btn-sm { padding: 8px 16px; font-size: 13px; border-radius: 8px; }
+
+        .divider { height: 1px; background: var(--border); margin: 18px 0; }
+        .or { text-align: center; color: var(--text2); font-size: 12px; margin-bottom: 14px; }
+
+        /* ===== ROOM ===== */
+        .room-top-bar { display: flex; align-items: center; padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 10px; flex-shrink: 0; }
+        .room-top-bar .back-btn { background: none; border: none; color: var(--text2); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+        .room-top-bar .back-btn:hover { background: var(--bg3); }
+        .room-top-bar .room-info { flex: 1; }
+        .room-top-bar .room-info h2 { font-size: 16px; font-weight: 700; }
+        .room-top-bar .room-info .room-id { color: var(--text2); font-size: 11px; font-family: monospace; }
+        .room-top-bar .room-actions { display: flex; gap: 6px; }
+
+        /* Share bar */
+        .share-bar { padding: 8px 16px; background: var(--bg2); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .share-bar span { font-size: 12px; color: var(--text2); white-space: nowrap; }
+        .share-bar input { flex: 1; background: var(--bg3); border: 1px solid var(--border); padding: 8px 12px; border-radius: 8px; color: var(--accent2); font-size: 12px; font-family: monospace; }
+        .share-bar button { background: var(--accent); border: none; padding: 8px 14px; border-radius: 8px; color: white; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap; }
+        .share-bar button:hover { background: var(--accent2); }
+
+        /* Invite bar */
+        .invite-bar { padding: 6px 16px; background: var(--bg2); display: flex; align-items: center; gap: 8px; flex-shrink: 0; border-top: 1px solid var(--border); }
+        .invite-bar span { font-size: 12px; color: var(--text2); white-space: nowrap; }
+        .invite-bar input[type="text"] { background: var(--bg3); border: 1px solid var(--border); padding: 7px 12px; border-radius: 8px; color: var(--text); font-size: 12px; }
+        .invite-bar input#invite-name { width: 160px; }
+        .invite-bar input#invite-link-out { flex: 1; color: var(--accent2); font-family: monospace; }
+        .invite-bar .invite-result { display: none; flex: 1; align-items: center; gap: 6px; }
+        .invite-bar .invite-result.show { display: flex; }
+        .invite-bar button { background: var(--accent); border: none; padding: 7px 12px; border-radius: 8px; color: white; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap; }
+        .invite-bar button:hover { background: var(--accent2); }
+        .invite-bar button.secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+        .invite-bar button.secondary:hover { background: var(--bg4); }
+
+        /* Room body */
+        .room-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+        .room-body.chat-only { flex-direction: column; }
+
+        /* Video grid */
+        .video-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding: 12px; overflow-y: auto; min-height: 200px; align-content: center; justify-items: center; background: var(--bg2); }
+        .video-card { background: var(--bg3); border-radius: 16px; overflow: hidden; position: relative; width: 100%; max-width: 400px; aspect-ratio: 4/3; border: 2px solid var(--border); transition: border-color 0.2s; }
+        .video-card:hover { border-color: var(--accent); }
+        .video-card video { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .video-card .label { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 5px 12px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 6px; backdrop-filter: blur(4px); }
+        .video-card .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: blink 2s infinite; }
+        .video-card .status-dot.offline { background: var(--text2); animation: none; }
+        .video-card.screen-card { border-color: var(--accent); border-width: 3px; }
+        .video-card.screen-card .status-dot { background: var(--accent2); }
+        .video-card .btn-close-screen { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5); border: none; color: white; border-radius: 50%; width: 28px; height: 28px; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.2s; }
+        .video-card .btn-close-screen:hover { opacity: 1; background: var(--danger); }
+        @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.4} }
+        .video-card .volume-icon { position: absolute; top: 10px; right: 10px; font-size: 16px; }
+
+        /* Chat panel */
+        .chat-panel { width: 380px; display: flex; flex-direction: column; background: var(--bg2); border-left: 1px solid var(--border); overflow: hidden; flex-shrink: 0; }
+        .chat-header { padding: 12px 16px; background: var(--bg3); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .chat-header h3 { font-size: 16px; }
+        .online-count { font-size: 12px; color: var(--accent); background: rgba(0,168,132,0.1); padding: 4px 10px; border-radius: 20px; }
+
+        .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+        .message { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.45; word-wrap: break-word; position: relative; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        .message.sent { align-self: flex-end; background: var(--sent); border-bottom-right-radius: 4px; }
+        .message.received { align-self: flex-start; background: var(--received); border-bottom-left-radius: 4px; }
+        .message .sender { font-size: 11px; color: var(--accent2); font-weight: 700; margin-bottom: 3px; }
+        .message .time { font-size: 10px; color: var(--text2); margin-top: 3px; text-align: right; }
+        .message.system { align-self: center; background: transparent; color: var(--text2); font-size: 12px; font-style: italic; max-width: 100%; padding: 6px 16px; text-align: center; }
+        .message .media { max-width: 100%; border-radius: 10px; margin-top: 6px; max-height: 200px; object-fit: contain; }
+        .message .audio-recording { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent2); }
+        .message .audio-recording .wave { animation: wave 0.6s infinite; }
+        @keyframes wave { 0%,100%{height:4px}50%{height:12px} }
+
+        .chat-input-area { padding: 10px 12px; background: var(--bg2); border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-end; }
+        .chat-input-area input[type="text"] { flex: 1; border: none; background: var(--bg3); padding: 10px 14px; border-radius: 12px; font-size: 14px; }
+        .chat-input-area textarea { flex: 1; border: none; background: var(--bg3); padding: 10px 14px; border-radius: 12px; font-size: 14px; color: var(--text); outline: none; resize: none; min-height: 20px; max-height: 100px; overflow-y: auto; }
+        .msg-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+        .icon-btn { width: 40px; height: 40px; border: none; border-radius: 10px; background: var(--bg3); color: var(--text2); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .icon-btn:hover { background: var(--bg4); color: var(--text); }
+        .icon-btn.active { background: var(--accent); color: white; }
+
+        /* Call bar */
+        .call-bar { display: flex; justify-content: center; gap: 12px; padding: 10px 16px; background: var(--bg2); border-top: 1px solid var(--border); flex-shrink: 0; }
+        .call-btn { width: 52px; height: 52px; border-radius: 50%; border: none; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .call-btn:active { transform: scale(0.9); }
+        .call-btn.audio-btn { background: var(--accent); color: white; }
+        .call-btn.audio-btn:hover { background: var(--accent2); transform: scale(1.1); }
+        .call-btn.video-btn { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+        .call-btn.video-btn:hover { background: var(--bg4); }
+        .call-btn.end-call { background: var(--danger); color: white; }
+        .call-btn.end-call:hover { opacity: 0.9; }
+        .call-btn.muted { background: var(--bg3); color: var(--text2); opacity: 0.5; }
+        .call-btn.screen-share-btn { background: var(--accent); color: white; }
+        .call-btn.screen-share-btn:hover { background: var(--accent2); transform: scale(1.1); }
+        .call-btn.screen-share-btn.active { background: var(--danger); animation: pulse-red 2s infinite; }
+        @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+
+        /* Active call info */
+        .active-call-info { display: none; padding: 8px 16px; background: rgba(0,168,132,0.1); border-bottom: 1px solid var(--accent); text-align: center; font-size: 13px; color: var(--accent2); align-items: center; justify-content: center; gap: 8px; }
+        .active-call-info.show { display: flex; }
+
+        /* Loading */
+        .spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Toast */
+        .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-100px); background: var(--accent); color: white; padding: 12px 24px; border-radius: 12px; font-size: 14px; z-index: 9999; transition: transform 0.3s ease; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.error { background: var(--danger); }
+
+        /* Empty state */
+        .empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text2); font-size: 14px; text-align: center; padding: 20px; }
+
+        /* Recording indicator */
+        .rec-indicator { display: none; align-items: center; gap: 8px; padding: 4px 12px; background: rgba(255,68,68,0.15); border-radius: 20px; font-size: 12px; color: var(--danger); }
+        .rec-indicator.show { display: flex; }
+        .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); animation: blink 1s infinite; }
+
+        /* Typing indicator */
+        .typing-indicator { padding: 4px 16px; font-size: 12px; color: var(--text2); font-style: italic; min-height: 24px; }
+
+        /* Emoji picker */
+        .emoji-picker { display: none; position: absolute; bottom: 70px; right: 16px; background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 10px; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+        .emoji-picker.show { display: grid; grid-template-columns: repeat(8, 32px); gap: 4px; }
+        .emoji-picker button { background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px; border-radius: 6px; }
+        .emoji-picker button:hover { background: var(--bg4); }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .room-body { flex-direction: column; }
+            .chat-panel { width: 100%; height: 45%; min-height: 200px; border-left: none; border-top: 1px solid var(--border); }
+            .video-grid { min-height: 150px; max-height: 45%; }
+            .video-card { max-width: 100%; aspect-ratio: 16/9; }
+        }
+        @media (max-width: 600px) {
+            .chat-panel { height: 35%; min-height: 160px; }
+            .video-grid { min-height: 120px; }
+            .logo { font-size: 56px; }
+            h1.title { font-size: 28px; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* Notification badge */
+        .badge { background: var(--danger); color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 700; }
+
+        /* File drop zone */
+        .drop-overlay { display: none; position: absolute; inset: 0; background: rgba(0,168,132,0.15); border: 3px dashed var(--accent); z-index: 50; align-items: center; justify-content: center; font-size: 18px; color: var(--accent); border-radius: 16px; }
+        .drop-overlay.show { display: flex; }
+    </style>
+</head>
+<body>
+    <div id="toast" class="toast"></div>
+
+    <!-- JOIN SCREEN -->
+    <div id="join-screen" class="active">
+        <div class="logo">💬</div>
+        <h1 class="title">HowApp</h1>
+        <p class="subtitle">Comunicação P2P sem servidor</p>
+        <p class="tagline">Texto · Áudio · Vídeo · Sem cadastro</p>
+
+        <div class="join-card">
+            <div class="input-group">
+                <label>Seu nome</label>
+                <input type="text" id="nickname" placeholder="Como quer ser chamado?" maxlength="20" autofocus>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="createRoom()">🏠 Criar Nova Sala</button>
+            <div class="divider"></div>
+            <p class="or">— ou entre em uma sala —</p>
+            <div class="input-group">
+                <label>ID da sala ou link completo</label>
+                <input type="text" id="room-link" placeholder="Ex: abc123 ou https://...?room=abc123">
+            </div>
+            <button class="btn btn-secondary btn-block" onclick="joinRoom()">🔗 Entrar na Sala</button>
+        </div>
+        <p class="tagline" style="margin-top: 10px;">🔒 Tudo é ponto a ponto — suas mensagens não passam por servidores</p>
+    </div>
+
+    <!-- LOADING SCREEN -->
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <p id="loading-text" style="color: var(--text2); font-size: 14px;">Conectando...</p>
+    </div>
+
+    <!-- ROOM SCREEN -->
+    <div id="room-screen">
+        <!-- Top bar -->
+        <div class="room-top-bar">
+            <button class="back-btn" onclick="leaveRoom()" title="Sair da sala">←</button>
+            <div class="room-info">
+                <h2>HowApp</h2>
+                <span class="room-id" id="room-id-display"></span>
+            </div>
+            <div class="room-actions">
+                <button class="btn btn-secondary btn-sm" onclick="toggleParticipants()" title="Participantes" id="btn-participants" style="display:none;">👥</button>
+                <button class="btn btn-secondary btn-sm" onclick="leaveRoom()" title="Sair">🚪</button>
+            </div>
+        </div>
+
+        <!-- Share bar -->
+        <div class="share-bar">
+            <span>📋 Compartilhar:</span>
+            <input type="text" id="share-link" readonly>
+            <button onclick="copyShareLink()">Copiar Link</button>
+            <button onclick="copyRoomId()" id="btn-copy-id" style="background: var(--bg3);">Copiar ID</button>
+        </div>
+
+        <!-- Invite bar -->
+        <div class="invite-bar" id="invite-bar">
+            <span>👤 Convidar:</span>
+            <input type="text" id="invite-name" placeholder="Nome do convidado" maxlength="20" onkeydown="if(event.key==='Enter') generateInviteLink()">
+            <button onclick="generateInviteLink()">Gerar Link</button>
+            <div class="invite-result" id="invite-result">
+                <input type="text" id="invite-link-out" readonly>
+                <button class="secondary" id="invite-copy-btn" onclick="copyInviteLink()">Copiar</button>
+            </div>
+        </div>
+
+        <!-- Active call info -->
+        <div class="active-call-info" id="active-call-info">
+            <span>📞 Chamada em andamento</span>
+        </div>
+
+        <!-- Room body -->
+        <div class="room-body" id="room-body">
+            <!-- Video grid -->
+            <div class="video-grid" id="video-grid">
+                <div class="empty-state" id="empty-msg">
+                    <div>👆 Use os botões abaixo para iniciar uma chamada de áudio ou vídeo</div>
+                </div>
+            </div>
+
+            <!-- Chat panel -->
+            <div class="chat-panel" id="chat-panel">
+                <div class="chat-header">
+                    <h3>💬 Conversa</h3>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="online-count" id="online-count">1 online</span>
+                        <div class="rec-indicator" id="rec-indicator"><div class="rec-dot"></div>Gravando áudio</div>
+                    </div>
+                </div>
+                <div class="messages" id="messages"></div>
+                <div class="typing-indicator" id="typing-indicator"></div>
+                <div style="position:relative;">
+                    <!-- Emoji picker -->
+                    <div class="emoji-picker" id="emoji-picker"></div>
+                    <div class="chat-input-area">
+                        <div class="msg-actions">
+                            <button class="icon-btn" onclick="toggleEmojiPicker()" title="Emoji" id="emoji-btn">😊</button>
+                            <button class="icon-btn" onclick="startVoiceRecording()" id="voice-btn" title="Gravar áudio">🎙️</button>
+                            <button class="icon-btn" onclick="sendImage()" title="Enviar imagem">📷</button>
+                            <button class="icon-btn" onclick="sendFile()" title="Enviar arquivo">📎</button>
+                        </div>
+                        <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+                            <textarea id="msg-input" rows="1" placeholder="Mensagem..." onkeydown="handleInputKey(event)" oninput="handleTyping()"></textarea>
+                        </div>
+                        <button class="icon-btn" onclick="sendMessage()" style="background:var(--accent);color:white;" title="Enviar">➤</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Call bar -->
+        <div class="call-bar" id="call-bar">
+            <button class="call-btn audio-btn" id="call-audio-btn" onclick="startCall('audio')" title="Chamada de áudio">📞</button>
+            <button class="call-btn video-btn" id="call-video-btn" onclick="startCall('video')" title="Chamada de vídeo">📹</button>
+            <button class="call-btn" id="call-mute-btn" onclick="toggleCallMic()" title="Mudo" style="display:none;">🎤</button>
+            <button class="call-btn" id="call-cam-btn" onclick="toggleCam()" title="Câmera" style="display:none;">📷</button>
+            <button class="call-btn screen-share-btn" id="call-screen-btn" onclick="toggleScreenShare()" title="Compartilhar tela" style="display:none;">🖥️</button>
+            <button class="call-btn end-call" id="call-end-btn" onclick="endCall()" title="Encerrar" style="display:none;">⏹️</button>
+        </div>
+    </div>
+
+    <input type="file" id="file-input" accept="image/*,video/*,audio/*" style="display:none" onchange="handleFileSelect(event)">
+
+    <script>
+    // ================================================================
+    // HOWAPP — Peer-to-Peer Communication App (Text, Audio, Video)
+    // Signaling via PeerJS — host-based room discovery & message relay.
+    //
+    // Architecture:
+    //   • "Host" peer: uses the bare roomId as its PeerJS ID (e.g. "abc123").
+    //     It acts as a relay hub: every data-connection sent to the host
+    //     is forwarded to ALL other members of the room.
+    //   • "Member" peers: use a unique ID like "roomId-nick-random" so they
+    //     don't collide with the host. Each member connects ONLY to the host.
+    //     The host forwards their messages to every other member.
+    //   • If the host leaves, the oldest member becomes the new host
+    //     (promoted automatically).
+    //   • Media calls remain P2P between the caller and each target
+    //     (no relay needed for WebRTC streams).
+    // ================================================================
+
+    // ===== State =====
+    let myPeer = null;          // PeerJS instance
+    let myId = '';              // My PeerJS ID
+    let roomId = '';
+    let nickname = '';
+    let isHost = false;         // Am I the host for this room?
+    let hostPeerId = '';        // Host's PeerJS ID (same as roomId)
+    // peers[peerId] = { nick, conn, isMember }
+    //   conn = DataConnection (to host or direct P2P)
+    //   isMember = true if this peer is a "member" (non-host)
+    let peers = {};
+    let myStream = null;
+    let callActive = false;
+    let callMicOn = true;
+    let callCamOn = true;
+    let callType = null;
+    let activeCalls = {};       // peerId -> { pc, stream }
+    let hostChanged = false;    // flag: did we become host after original host left?
+    let hostPingTimer = null;   // Periodic ping to check if host is alive
+    let typingTimer = null;
+    let typingPeers = {};
+    let recMedia = null;
+    let recChunks = [];
+    let myPeerId = '';          // My unique PeerJS ID (may differ from myId for host)
+    let screenStream = null;    // Screen capture stream
+    let screenSharing = false;  // Is screen being shared?
+    let screenCallMap = {};     // { peerId: { pc, stream } } — screen share P2P connections
+
+    // ===== DOM helpers =====
+    const $ = id => document.getElementById(id);
+    const show = id => $(id).classList.add('active');
+    const hide = id => $(id).classList.remove('active');
+
+    // ===== Emoji data =====
+    const EMOJIS = ['😀','😂','🥹','😍','🤩','😎','🥳','😇','🤗','🫡','👍','👏','🙏','❤️','🔥','✨','💪','🎉','🤝','👋','✅','⭐','💬','📹','🎙️','📷','🎵','💬','🌍','🙌'];
+
+    // ===== Init =====
+    function init() {
+        const params = new URLSearchParams(location.search);
+        const roomFromUrl = params.get('room');
+        const nickFromUrl = params.get('nick');
+        if (roomFromUrl) {
+            $('room-link').value = roomFromUrl;
+        }
+        if (nickFromUrl) {
+            $('nickname').value = decodeURIComponent(nickFromUrl).substring(0, 20);
+        }
+
+        const picker = $('emoji-picker');
+        picker.innerHTML = EMOJIS.map(e => `<button onclick="insertEmoji('${e}')">${e}</button>`).join('');
+
+        if (roomFromUrl) {
+            setTimeout(() => joinRoom(), 300);
+        }
+
+        $('nickname').onkeydown = e => { if (e.key === 'Enter') createRoom(); };
+        $('room-link').onkeydown = e => { if (e.key === 'Enter') joinRoom(); };
+
+        const messages = $('messages');
+        messages.addEventListener('dragover', e => { e.preventDefault(); messages.style.border = '2px dashed var(--accent)'; });
+        messages.addEventListener('dragleave', () => { messages.style.border = ''; });
+        messages.addEventListener('drop', e => {
+            e.preventDefault();
+            messages.style.border = '';
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) sendImageFile(file);
+            else if (file) sendFileFile(file);
+        });
+
+        document.addEventListener('click', e => {
+            if (!$('emoji-picker').contains(e.target) && e.target.id !== 'emoji-btn') {
+                $('emoji-picker').classList.remove('show');
+            }
+        });
+    }
+
+    // ===== Room ID generation =====
+    function genRoomId() {
+        const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let r = '';
+        for (let i = 0; i < 8; i++) r += c[Math.floor(Math.random() * c.length)];
+        return r;
+    }
+
+    // Sanitize a string to PeerJS-safe ID (alphanumeric, dash, underscore only)
+    function sanitizeForPeer(str) {
+        return str.toLowerCase()
+            .replace(/[^a-z0-9\-_]/g, '')
+            .substring(0, 20);
+    }
+
+    // Build a safe member PeerJS ID from roomId + nickname
+    function makeMemberId(roomId, nickname) {
+        const safeRoom = sanitizeForPeer(roomId);
+        const safeNick = sanitizeForPeer(nickname);
+        const unique = Math.random().toString(36).substring(2, 8);
+        return safeRoom + '-' + safeNick + '-' + unique;
+    }
+
+    function extractRoomId(input) {
+        input = input.trim().toLowerCase();
+        if (input.includes('room=')) {
+            const m = input.match(/[?&]room=([a-z0-9]+)/i);
+            if (m) return m[1];
+        }
+        if (input.includes('/room/')) {
+            const m = input.split('/room/')[1]?.split(/[?# ]/)[0];
+            if (m) return m.toLowerCase();
+        }
+        const clean = input.replace(/[^a-z0-9]/g, '');
+        if (clean.length >= 4) return clean;
+        return null;
+    }
+
+    // ===== Setup PeerJS =====
+    async function setupPeer(onSuccess, onError) {
+        if (!window.SimplePeer) {
+            await loadScript('https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js');
+        }
+        if (!window.Peer) {
+            await loadScript('https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js');
+        }
+
+        return new Promise((resolve, reject) => {
+            // Decide role: createRoom() → host, joinRoom() → member
+            const attemptHost = window._wantToBeHost;
+
+            let peerId;
+            if (attemptHost) {
+                // Try to become host with the bare roomId
+                peerId = roomId;
+            } else {
+                // Generate a safe unique member ID
+                peerId = makeMemberId(roomId, nickname);
+            }
+
+            myPeer = new Peer(peerId, {
+                debug: 2,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                    ]
+                }
+            });
+
+            myId = peerId;
+
+            // ---- Host events (only if we ARE the host) ----
+            myPeer.on('connection', (conn) => {
+                if (attemptHost) {
+                    handleIncomingConnection(conn);
+                }
+            });
+
+            // ---- Member events ----
+            myPeer.on('call', (call) => {
+                if (!attemptHost) {
+                    handleIncomingCall(call);
+                }
+            });
+
+            myPeer.on('open', () => {
+                console.log('Peer connected with ID:', myId, 'role:', attemptHost ? 'host' : 'member');
+                resolve({ host: attemptHost });
+            });
+
+            myPeer.on('error', (err) => {
+                console.error('Peer error:', err);
+                // If host attempt failed (ID taken), try as member
+                if (attemptHost && (err.type === 'unavailable-id' || err.type === 'invalid-id')) {
+                    console.log('Host ID taken, switching to member role...');
+                    // Destroy current peer and try as member
+                    myPeer.destroy();
+                    myPeer = null;
+                    peerId = makeMemberId(roomId, nickname);
+                    myId = peerId;
+                    // Retry as member — reconnect with member ID
+                    retryAsMember(peerId, onSuccess, onError);
+                } else {
+                    reject(err);
+                }
+            });
+
+            myPeer.on('disconnected', () => {
+                console.log('Disconnected, reconnecting...');
+                setTimeout(() => {
+                    if (myPeer && !myPeer.disconnected && !myPeer.destroyed) {
+                        myPeer.connect();
+                    }
+                }, 2000);
+            });
+
+            // Timeout
+            setTimeout(() => {
+                if (!myPeer.disconnected && !myPeer.destroyed) {
+                    reject(new Error('Connection timeout'));
+                }
+            }, 10000);
+        });
+    }
+
+    function retryAsMember(memberPeerId, onSuccess, onError) {
+        console.log('Retrying as member with ID:', memberPeerId);
+        myPeer = new Peer(memberPeerId, {
+            debug: 2,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
+                    { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
+                    { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+                ]
+            }
+        });
+        myId = memberPeerId;
+
+        myPeer.on('call', (call) => {
+            handleIncomingCall(call);
+        });
+
+        myPeer.on('open', () => {
+            console.log('Retry as member. Peer ID:', myId);
+            onSuccess({ host: false });
+        });
+
+        myPeer.on('error', (err) => {
+            console.error('Retry error:', err);
+            onError(err);
+        });
+
+        setTimeout(() => {
+            if (!myPeer.disconnected && !myPeer.destroyed) {
+                onError(new Error('Retry timeout'));
+            }
+        }, 10000);
+    }
+
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
+    }
+
+    // ===== Room entry =====
+    async function createRoom() {
+        nickname = $('nickname').value.trim() || 'Anônimo';
+        roomId = genRoomId().toLowerCase();
+        window._wantToBeHost = true;
+        hide('join-screen');
+        show('loading-screen');
+        $('loading-text').textContent = 'Criando sala ' + roomId.toUpperCase() + '...';
+
+        try {
+            const result = await setupPeer();
+            isHost = result.host;
+            hostPeerId = roomId;
+            hide('loading-screen');
+            show('room-screen');
+            $('room-id-display').textContent = `Sala: ${roomId.toUpperCase()} • ${isHost ? 'Você é o anfitrião' : 'Conectado'}`;
+            updateShareLink();
+            addSystem(isHost ? `🏠 Sala criada: ${roomId.toUpperCase()}` : `🏠 Você se juntou à sala: ${roomId.toUpperCase()}`);
+            addSystem(`👋 Bem-vindo, ${nickname}!`);
+            if (isHost) {
+                updateOnline();
+            } else {
+                connectToHost();
+            }
+        } catch (err) {
+            console.error('Create room error:', err);
+            showToast('Erro ao criar sala: ' + err.message, true);
+            show('join-screen');
+        }
+    }
+
+    async function joinRoom() {
+        nickname = $('nickname').value.trim() || 'Anônimo';
+        const input = $('room-link').value.trim();
+        const id = extractRoomId(input);
+        if (!id) {
+            showToast('ID inválido. Use letras minúsculas e números (mínimo 4 caracteres).', true);
+            return;
+        }
+
+        roomId = id;
+        window._wantToBeHost = false;
+        hide('join-screen');
+        show('loading-screen');
+        $('loading-text').textContent = 'Conectando à sala ' + roomId.toUpperCase() + '...';
+
+        try {
+            const result = await setupPeer();
+            isHost = result.host;
+            hostPeerId = roomId;
+            hide('loading-screen');
+            show('room-screen');
+            $('room-id-display').textContent = `Sala: ${roomId.toUpperCase()}`;
+            updateShareLink();
+            addSystem(`🔗 Entrou na sala: ${roomId.toUpperCase()}`);
+            addSystem(`👋 Bem-vindo, ${nickname}!`);
+            if (isHost) {
+                addSystem('🏠 Você se tornou o anfitrião da sala');
+            } else {
+                connectToHost();
+            }
+        } catch (err) {
+            console.error('Join room error:', err);
+            showToast('Erro ao conectar à sala. Verifique se o ID está correto.', true);
+            show('join-screen');
+        }
+    }
+
+    // ===== Host: Handle Incoming Connections =====
+    function handleIncomingConnection(conn) {
+        console.log('Incoming connection from member:', conn.peer);
+
+        peers[conn.peer] = { nick: null, conn: conn, isMember: true };
+
+        conn.on('data', (data) => {
+            handleMessage(data, conn.peer, true);
+        });
+
+        conn.on('close', () => {
+            handlePeerLeft(conn.peer);
+        });
+
+        conn.on('error', (err) => {
+            console.error('Connection error:', err);
+        });
+
+        // Relay "joined" announcement to all other members
+        // (We'll do this after receiving their handshake)
+    }
+
+    // ===== Member: Connect to Host =====
+    function connectToHost() {
+        if (!myPeer || myPeer.disconnected) return;
+        console.log('Member connecting to host:', hostPeerId);
+        const conn = myPeer.connect(hostPeerId, {
+            reliable: true,
+            metadata: { peerId: myId, nickname: nickname, roomId: roomId }
+        });
+
+        conn.on('open', () => {
+            console.log('Connected to host');
+            // Register host in peers so we can send messages to it
+            if (!peers[hostPeerId]) {
+                peers[hostPeerId] = { nick: null, conn: conn, isMember: false };
+            }
+            // Send handshake with our info
+            conn.send({
+                type: 'handshake',
+                peerId: myId,
+                nickname: nickname,
+                roomId: roomId,
+                timestamp: Date.now()
+            });
+        });
+
+        conn.on('data', (data) => {
+            handleMessage(data, hostPeerId, false);
+        });
+
+        conn.on('close', () => {
+            console.log('Connection to host lost');
+            // Try to reconnect after a delay
+            setTimeout(() => {
+                if (myPeer && !myPeer.disconnected && !myPeer.destroyed && isHost === false) {
+                    connectToHost();
+                }
+            }, 3000);
+        });
+
+        conn.on('error', (err) => {
+            console.error('Host connection error:', err);
+            setTimeout(() => {
+                if (myPeer && !myPeer.disconnected && !myPeer.destroyed && isHost === false) {
+                    connectToHost();
+                }
+            }, 5000);
+        });
+    }
+
+    // ===== Member: Send message to host (who relays to everyone)
+    function sendToHost(type, extra) {
+        const hostInfo = peers[hostPeerId];
+        if (hostInfo?.conn?.open) {
+            try {
+                hostInfo.conn.send({
+                    type: type,
+                    senderId: myId,
+                    roomId: roomId,
+                    payload: { ...extra, nickname: nickname }
+                });
+            } catch(e) { console.warn('Host send failed:', e); }
+        }
+    }
+
+    // ===== Message Handling & Relay =====
+    // The host acts as a relay hub: any message from a member is
+    // forwarded to ALL other members (except the sender).
+
+    function handleMessage(data, fromPeer, viaHost) {
+        if (!data || !data.type) return;
+
+        switch (data.type) {
+            case 'handshake':
+                // A member connected and introduced themselves
+                // This only happens at the HOST side
+                if (!peers[fromPeer]) {
+                    peers[fromPeer] = { nick: data.nickname, conn: peers[fromPeer]?.conn || null, isMember: true };
+                } else {
+                    peers[fromPeer].nick = data.nickname;
+                }
+                addSystem(`👋 ${data.nickname} entrou na sala`);
+                updateOnline();
+                console.log('New member:', data.nickname, '(', fromPeer, ')');
+                // Tell the new member about all existing members (including the host)
+                {
+                    const existingMembers = Object.entries(peers)
+                        .filter(([pid, info]) => pid !== fromPeer && info.nick)
+                        .map(([pid, info]) => ({ peerId: pid, nickname: info.nick, isMember: true }));
+                    existingMembers.push({ peerId: myId, nickname: nickname, isMember: false });
+                    if (peers[fromPeer]?.conn?.open) {
+                        try {
+                            peers[fromPeer].conn.send({
+                                type: 'member-list',
+                                senderId: myId,
+                                members: existingMembers
+                            });
+                        } catch(e) { console.warn('member-list send failed:', e); }
+                    }
+                }
+                // Tell all OTHER members about the new joiner
+                broadcastRelay('member-joined', { peerId: fromPeer, nickname: data.nickname });
+                break;
+
+            case 'member-list':
+                // Host sent us the list of already-present members
+                for (const m of (data.members || [])) {
+                    if (m.peerId !== myId && !peers[m.peerId]) {
+                        peers[m.peerId] = { nick: m.nickname, conn: null, isMember: m.isMember !== false };
+                    }
+                }
+                updateOnline();
+                updateCallUI();
+                break;
+
+            case 'member-joined':
+                // We're a member, and the host is telling us about a new member
+                if (data.nickname && data.nickname !== nickname) {
+                    addSystem(`👋 ${data.nickname} entrou na sala`);
+                    updateOnline();
+                    updateCallUI();
+                }
+                // Store this peer info so we can call them later
+                if (!peers[data.peerId]) {
+                    peers[data.peerId] = { nick: data.nickname, conn: null, isMember: true };
+                }
+                // Also ensure we have host info (in case the host broadcasts about itself)
+                if (data.peerId === hostPeerId && !peers[hostPeerId]) {
+                    peers[hostPeerId] = { nick: data.nickname, conn: null, isMember: false };
+                }
+                break;
+
+            case 'message':
+                // Direct message from a member sent via sendToHost()
+                // Host should display it and relay to all other members
+                addChat(data.payload.nickname || data.senderId.substring(0, 6), data.payload.text, 'received');
+                broadcastRelay('message', { text: data.payload.text }, data.senderId);
+                break;
+
+            case 'image':
+                // Direct image from a member
+                addChat(data.payload.nickname || data.senderId.substring(0, 6),
+                    `<img class="media" src="${data.payload.data}" alt="Imagem">`, 'received');
+                broadcastRelay('image', { data: data.payload.data }, data.senderId);
+                break;
+
+            case 'file':
+                // Direct file from a member
+                addChat(data.payload.nickname || data.senderId.substring(0, 6),
+                    `<div>📄 ${data.payload.name} (${formatBytes(data.payload.size)})</div>
+                     <a href="${data.payload.data}" download="${data.payload.name}" style="color:var(--accent2);font-size:12px;">⬇️ Baixar</a>`,
+                    'received');
+                broadcastRelay('file', { name: data.payload.name, size: data.payload.size, data: data.payload.data, type: data.payload.type }, data.senderId);
+                break;
+
+            case 'voice':
+                // Direct voice from a member
+                const voiceNick = data.payload.nickname || data.senderId.substring(0, 6);
+                const voiceMsgEl = document.createElement('div');
+                voiceMsgEl.className = 'audio-recording';
+                voiceMsgEl.textContent = `${voiceNick} enviou áudio (${data.payload.duration}s)`;
+                voiceMsgEl.prepend(document.createTextNode('🎙️ '));
+                const vc = $('messages');
+                const vm = document.createElement('div');
+                vm.className = 'message received';
+                const vs = document.createElement('div');
+                vs.className = 'sender'; vs.textContent = voiceNick;
+                vm.appendChild(vs);
+                vm.appendChild(voiceMsgEl);
+                const vt = document.createElement('div');
+                vt.className = 'time';
+                vt.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                vm.appendChild(vt);
+                vc.appendChild(vm);
+                vc.scrollTop = vc.scrollHeight;
+                voiceMsgEl.style.cursor = 'pointer';
+                voiceMsgEl.onclick = () => playVoiceMessage(data.payload.audio);
+                broadcastRelay('voice', { audio: data.payload.audio, duration: data.payload.duration }, data.senderId);
+                break;
+
+            case 'stop-typing':
+                // Member stopped typing
+                broadcastRelay('stop-typing', {});
+                break;
+
+            case 'leave':
+                // Member is leaving the room
+                handlePeerLeft(fromPeer);
+                break;
+
+            case 'typing':
+                // Member typing (direct from member)
+                broadcastRelay('typing', {});
+                break;
+
+            case 'relay-message':
+                // Host is relaying a message from one member to another
+                // (for P2P messages that should go to everyone)
+                if (data.senderId !== myId) {
+                    switch (data.payload.type) {
+                        case 'message':
+                            addChat(data.payload.nickname || data.senderId.substring(0, 6), data.payload.text, 'received');
+                            break;
+                        case 'image':
+                            addChat(data.payload.nickname || data.senderId.substring(0, 6),
+                                `<img class="media" src="${data.payload.data}" alt="Imagem">`, 'received');
+                            break;
+                        case 'file':
+                            addChat(data.payload.nickname || data.senderId.substring(0, 6),
+                                `<div>📄 ${data.payload.name} (${formatBytes(data.payload.size)})</div>
+                                 <a href="${data.payload.data}" download="${data.payload.name}" style="color:var(--accent2);font-size:12px;">⬇️ Baixar</a>`,
+                                'received');
+                            break;
+                        case 'voice':
+                            const voiceNick = data.payload.nickname || data.senderId.substring(0, 6);
+                            const voiceMsgEl = document.createElement('div');
+                            voiceMsgEl.className = 'audio-recording';
+                            voiceMsgEl.textContent = `${voiceNick} enviou áudio (${data.payload.duration}s)`;
+                            voiceMsgEl.prepend(document.createTextNode('🎙️ '));
+                            const vc = $('messages');
+                            const vm = document.createElement('div');
+                            vm.className = 'message received';
+                            const vs = document.createElement('div');
+                            vs.className = 'sender'; vs.textContent = voiceNick;
+                            vm.appendChild(vs);
+                            vm.appendChild(voiceMsgEl);
+                            const vt = document.createElement('div');
+                            vt.className = 'time';
+                            vt.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            vm.appendChild(vt);
+                            vc.appendChild(vm);
+                            vc.scrollTop = vc.scrollHeight;
+                            voiceMsgEl.style.cursor = 'pointer';
+                            voiceMsgEl.onclick = () => playVoiceMessage(data.payload.audio);
+                            break;
+                        case 'typing':
+                            handleTypingIndicator(data.senderId, true);
+                            break;
+                        case 'stop-typing':
+                            handleTypingIndicator(data.senderId, false);
+                            break;
+                        case 'member-left':
+                            if (data.payload.nickname && data.payload.nickname !== nickname) {
+                                addSystem(`👋 ${data.payload.nickname} saiu da sala`);
+                            }
+                            // Use payload.peerId (not senderId which is the host's ID)
+                            if (data.payload.peerId) handlePeerLeft(data.payload.peerId);
+                            break;
+                        case 'member-joined':
+                            {
+                                const jPeerId = data.payload.peerId;
+                                const jNick = data.payload.nickname;
+                                if (jPeerId && jPeerId !== myId) {
+                                    if (!peers[jPeerId]) {
+                                        peers[jPeerId] = { nick: jNick, conn: null, isMember: true };
+                                    } else {
+                                        peers[jPeerId].nick = jNick;
+                                    }
+                                    if (jNick && jNick !== nickname) {
+                                        addSystem(`👋 ${jNick} entrou na sala`);
+                                    }
+                                    updateOnline();
+                                    updateCallUI();
+                                }
+                            }
+                            break;
+                        case 'screen-ended':
+                            {
+                                const seSender = data.senderId;
+                                if (seSender && seSender !== myId) {
+                                    stopScreenShareTo(seSender);
+                                    addSystem(`🖥️ ${peers[seSender]?.nick || 'Alguém'} parou de compartilhar a tela`);
+                                }
+                            }
+                            break;
+                    }
+                }
+                break;
+
+            // P2P call signaling messages come through the host relay too
+            case 'relay-call-offer':
+                // Only the HOST relays to other members (prevents relay loops)
+                if (isHost && data.senderId !== myId) {
+                    relayCallSignal(data.type, data);
+                }
+                // If target is us, handle it directly
+                if (data.targetId === myId || !data.targetId) {
+                    handleRemoteOffer(data.senderId, data.payload.sdp);
+                }
+                break;
+
+            case 'relay-call-answer-sdp':
+                // Only the HOST relays to other members
+                if (isHost && data.senderId !== myId) {
+                    relayCallSignal(data.type, data);
+                }
+                if (data.targetId === myId || !data.targetId) {
+                    handleRemoteAnswer(data.senderId, data.payload.sdp);
+                }
+                break;
+
+            case 'relay-ice-candidate':
+                // Only the HOST relays to other members
+                if (isHost && data.senderId !== myId) {
+                    relayCallSignal(data.type, data);
+                }
+                if (data.targetId === myId || !data.targetId) {
+                    handleIceCandidate(data.senderId, data.payload.candidate);
+                }
+                break;
+
+            case 'relay-call-ended':
+                // Only the HOST relays to other members
+                if (isHost && data.senderId !== myId) {
+                    relayCallSignal(data.type, data);
+                }
+                if (data.targetId === myId || !data.targetId) {
+                    endCallTo(data.senderId);
+                }
+                break;
+
+            case 'host-ping-response':
+                // Host is alive
+                break;
+
+            case 'host-vacated':
+                // Host left, we should become host if we're the only one left
+                if (Object.keys(peers).length === 0) {
+                    addSystem('⚠️ Sem anfitrião — promovendo para anfitrião');
+                    promoteToHost();
+                }
+                break;
+
+            case 'relay-screen-offer':
+                // Host relays to the targeted member; only target handles it
+                if (isHost && data.senderId !== myId) {
+                    relayCallSignal(data.type, data);
+                }
+                if (data.targetId === myId || !data.targetId) {
+                    handleScreenShareOffer(data.senderId, data.payload.sdp);
+                }
+                break;
+
+            case 'relay-screen-answer':
+                // Host relays back to the original sharer
+                if (isHost && data.senderId !== myId) {
+                    relayCallSignal(data.type, data);
+                }
+                if (data.targetId === myId || !data.targetId) {
+                    handleScreenShareAnswer(data.senderId, data.payload.sdp);
+                }
+                break;
+
+            case 'relay-screen-ice':
+                // Host relays ICE candidates between peers
+                if (isHost && data.senderId !== myId) {
+                    relayCallSignal(data.type, data);
+                }
+                if (data.targetId === myId || !data.targetId) {
+                    handleScreenShareIce(data.senderId, data.payload.candidate);
+                }
+                break;
+
+            case 'screen-ended':
+                // Screen share ended — if host, relay to all other members
+                {
+                    const screenEndSender = data.senderId || fromPeer;
+                    if (isHost && screenEndSender !== myId) {
+                        Object.entries(peers).forEach(([pid, info]) => {
+                            if (pid !== screenEndSender && info.conn?.open) {
+                                try {
+                                    info.conn.send({
+                                        type: 'relay-message',
+                                        senderId: screenEndSender,
+                                        roomId: roomId,
+                                        payload: { type: 'screen-ended' }
+                                    });
+                                } catch(e) {}
+                            }
+                        });
+                        stopScreenShareTo(screenEndSender);
+                        addSystem(`🖥️ ${peers[screenEndSender]?.nick || 'Alguém'} parou de compartilhar a tela`);
+                    } else if (screenEndSender === myId) {
+                        removeSelfScreenCard();
+                    } else if (!isHost) {
+                        stopScreenShareTo(screenEndSender);
+                    }
+                }
+                break;
+        }
+    }
+
+    // Host broadcasts a message to ALL connected members
+    function broadcastRelay(type, extra, senderIdOverride) {
+        const payload = { type, ...extra };
+        const senderId = senderIdOverride || myId;
+        Object.entries(peers).forEach(([peerId, info]) => {
+            if (info.conn?.open) {
+                try {
+                    info.conn.send({
+                        type: 'relay-message',
+                        senderId: senderId,
+                        roomId: roomId,
+                        payload: payload
+                    });
+                } catch(e) { console.warn('Relay send failed:', e); }
+            }
+        });
+    }
+
+    // ===== Peer Leave =====
+    function handlePeerLeft(peerId) {
+        const info = peers[peerId];
+        const nick = info?.nick || peerId.substring(0, 6);
+        if (peerId === hostPeerId) {
+            // Host left! Check if we should become the new host
+            addSystem(`🏠 O anfitrião (${nick}) saiu da sala`);
+            // If we're a member and we're the only one, become host
+            // (We can't easily take over the PeerJS ID, so we inform everyone)
+            // Members will try to reconnect to the old host
+            // If no host responds, someone should try to create a new one
+            delete peers[peerId];
+            // Check if we should become host
+            const remaining = Object.keys(peers).length;
+            if (remaining === 0 && myPeer && !myPeer.disconnected && !myPeer.destroyed) {
+                addSystem('⚠️ Sem outros membros — promovendo para anfitrião');
+                promoteToHost();
+            }
+        } else {
+            addSystem(`👋 ${nick} saiu da sala`);
+            delete peers[peerId];
+            if (activeCalls[peerId]) {
+                try { activeCalls[peerId].pc?.close(); } catch(e){}
+                delete activeCalls[peerId];
+            }
+            removeVideoCard(peerId);
+            updateOnline();
+            updateCallUI();
+            // Relay the leave to other members
+            if (isHost) {
+                broadcastRelay('member-left', { peerId: peerId, nickname: nick });
+            }
+        }
+        updateOnline();
+    }
+
+    // Promote current peer to host (only if they are the last member)
+    function promoteToHost() {
+        // In practice, we can't change our PeerJS ID dynamically.
+        // Instead, we just act as the relay for future connections.
+        // New members joining will try to connect to roomId (the old host ID),
+        // but if that fails, we listen on our own ID.
+        // For simplicity: we stay as a member and wait for someone
+        // else to become host.
+        isHost = true;
+        hostPeerId = myId; // We now use our own ID as the "host"
+        addSystem('⚠️ Agora você é o anfitrião');
+        // Note: this is a soft transition. We can't actually retake the
+        // bare roomId ID, but we can act as a relay for P2P signaling.
+        // For full reliability, we'd need a signaling server.
+    }
+
+        // ===== Calls (WebRTC) =====
+    // Calls are P2P between caller and target.
+    // The host relays the SDP offer/answer and ICE candidates.
+    // ALL members can initiate calls — the host relays signals to all other members.
+    async function startCall(type) {
+        callType = type;
+        callActive = true;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: type === 'video'
+            });
+            myStream = stream;
+            addSelfCard();
+            const emptyMsg = $('empty-msg');
+            if (emptyMsg) emptyMsg.remove();
+
+            // For each known peer, initiate a P2P call.
+            // Host uses direct connections; members route signaling through host.
+            const hostConnOpen = peers[hostPeerId]?.conn?.open;
+            for (const [peerId, info] of Object.entries(peers)) {
+                if (activeCalls[peerId]) continue;
+                if (peerId === myId) continue;
+                const canReach = isHost ? info.conn?.open : hostConnOpen;
+                if (!canReach) continue;
+                try {
+                    await initiateP2PCall(peerId, stream, type);
+                } catch (e) {
+                    console.error('Call error to', peerId, e);
+                }
+            }
+
+            if (Object.keys(activeCalls).length === 0) {
+                callActive = false;
+                removeSelfVideo();
+                showToast('⚠️ Nenhum membro na sala para chamar');
+            } else {
+                updateCallUI();
+            }
+        } catch (e) {
+            console.error('Call error:', e);
+            callActive = false;
+            removeSelfVideo();
+            removeSelfCard();
+            showToast('❌ Não foi possível acessar mídia: ' + e.message);
+        }
+    }
+
+    // Initiate a P2P call to a specific peer
+    async function initiateP2PCall(targetId, stream, type) {
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+            ]
+        });
+
+        if (stream) {
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
+        }
+
+        activeCalls[targetId] = { pc, stream: stream };
+
+        pc.ontrack = (event) => {
+            addRemoteVideo(targetId, event.streams[0]);
+            activeCalls[targetId].stream = event.streams[0];
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                const iceData = {
+                    candidate: {
+                        candidate: event.candidate.candidate,
+                        sdpMid: event.candidate.sdpMid,
+                        sdpMLineIndex: event.candidate.sdpMLineIndex,
+                        usernameFragment: event.candidate.usernameFragment
+                    }
+                };
+                if (isHost) {
+                    const info = peers[targetId];
+                    if (info?.conn?.open) {
+                        info.conn.send({
+                            type: 'relay-ice-candidate',
+                            senderId: myId,
+                            targetId: targetId,
+                            roomId: roomId,
+                            payload: iceData
+                        });
+                    }
+                } else {
+                    const hostInfo = peers[hostPeerId];
+                    if (hostInfo?.conn?.open) {
+                        hostInfo.conn.send({
+                            type: 'relay-ice-candidate',
+                            senderId: myId,
+                            targetId: targetId,
+                            roomId: roomId,
+                            payload: iceData
+                        });
+                    }
+                }
+            }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        relayCallMessage(targetId, 'relay-call-offer', { sdp: { type: offer.type, sdp: offer.sdp }, type: type });
+        console.log('P2P call to', targetId);
+    }
+
+    // Relay a call signaling message through the host to a specific target
+    function relayCallMessage(targetId, msgType, payload) {
+        const data = {
+            type: msgType,
+            senderId: myId,
+            targetId: targetId,
+            roomId: roomId,
+            payload: payload
+        };
+
+        if (isHost) {
+            // We ARE the host, send directly to the target connection
+            const info = peers[targetId];
+            if (info?.conn?.open) {
+                info.conn.send(data);
+            }
+        } else {
+            // We're a member, send to the host who will relay
+            const hostInfo = peers[hostPeerId];
+            if (hostInfo?.conn?.open) {
+                hostInfo.conn.send(data);
+            }
+        }
+    }
+
+    // Relay a screen-share signaling message to a specific target (host sends direct; member sends via host)
+    function relayScreenMessage(targetId, msgType, payload) {
+        const msg = {
+            type: msgType,
+            senderId: myId,
+            targetId: targetId,
+            roomId: roomId,
+            payload: payload
+        };
+        if (isHost) {
+            const info = peers[targetId];
+            if (info?.conn?.open) {
+                try { info.conn.send(msg); } catch(e) {}
+            }
+        } else {
+            const hostConn = peers[hostPeerId]?.conn;
+            if (hostConn?.open) {
+                try { hostConn.send(msg); } catch(e) {}
+            }
+        }
+    }
+
+    // Host: Relay call signaling from any member to all other members
+    function relayCallSignal(type, data) {
+        const relayData = {
+            type: type,
+            senderId: data.senderId,
+            targetId: data.targetId,
+            roomId: roomId,
+            payload: data.payload
+        };
+        // Send to all members (excluding sender)
+        Object.entries(peers).forEach(([peerId, info]) => {
+            if (peerId === data.senderId) return;
+            if (info.conn?.open) {
+                try {
+                    info.conn.send(relayData);
+                } catch(e) { console.warn('Call relay send failed:', e); }
+            }
+        });
+    }
+
+    function handleRemoteOffer(fromPeer, sdp) {
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+            ]
+        });
+
+        activeCalls[fromPeer] = { pc, peerId: fromPeer };
+
+        pc.ontrack = (event) => {
+            addRemoteVideo(fromPeer, event.streams[0]);
+            activeCalls[fromPeer].stream = event.streams[0];
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                // Convert to plain object for JSON serialization over DataChannel
+                relayCallMessage(fromPeer, 'relay-ice-candidate', {
+                    candidate: {
+                        candidate: event.candidate.candidate,
+                        sdpMid: event.candidate.sdpMid,
+                        sdpMLineIndex: event.candidate.sdpMLineIndex,
+                        usernameFragment: event.candidate.usernameFragment
+                    }
+                });
+            }
+        };
+
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                removeVideoCard(fromPeer);
+                delete activeCalls[fromPeer];
+                if (Object.keys(activeCalls).length === 0) {
+                    callActive = false;
+                    updateCallUI();
+                }
+            }
+        };
+
+        pc.setRemoteDescription(sdp)
+            .then(async () => {
+                if (myStream) {
+                    myStream.getTracks().forEach(t => pc.addTrack(t, myStream));
+                    addSelfCard();
+                }
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                // Convert to plain object for JSON serialization over DataChannel
+                relayCallMessage(fromPeer, 'relay-call-answer-sdp', {
+                    sdp: {
+                        type: pc.localDescription.type,
+                        sdp: pc.localDescription.sdp
+                    }
+                });
+            })
+            .catch(e => {
+                console.error('Answer error:', e);
+                delete activeCalls[fromPeer];
+            });
+    }
+
+    function handleRemoteAnswer(fromPeer, sdp) {
+        const callData = activeCalls[fromPeer];
+        if (!callData) return;
+        // sdp is already a plain object {type, sdp} from the relay
+        // No need for new RTCSessionDescription wrapping
+        callData.pc.setRemoteDescription(sdp)
+            .then(() => {
+                console.log('Call answered');
+                // Ensure we show the remote video card once answer is ready
+                if (callData.stream) {
+                    addRemoteVideo(fromPeer, callData.stream);
+                }
+            })
+            .catch(e => console.error('Answer set error:', e));
+    }
+
+    function handleIceCandidate(fromPeer, candidate) {
+        const callData = activeCalls[fromPeer];
+        if (!callData) return;
+        // candidate is a plain object {candidate, sdpMid, sdpMLineIndex, usernameFragment}
+        // Use WebRTC modern API: pass plain object directly (no new RTCIceCandidate wrapper)
+        // If sdpMid/sdpMLineIndex are null, provide safe defaults
+        const iceObj = {
+            candidate: candidate.candidate || '',
+            sdpMid: candidate.sdpMid || '0',
+            sdpMLineIndex: candidate.sdpMLineIndex ?? 0,
+            usernameFragment: candidate.usernameFragment || ''
+        };
+        callData.pc.addIceCandidate(iceObj)
+            .catch(e => console.error('ICE candidate error:', e));
+    }
+
+    function endCallTo(peerId) {
+        if (activeCalls[peerId]) {
+            try { activeCalls[peerId].pc?.close(); } catch (e) {}
+            delete activeCalls[peerId];
+            removeVideoCard(peerId);
+        }
+        // If this was the last call, clean up self video
+        if (Object.keys(activeCalls).length === 0) {
+            callActive = false;
+            if (myStream) {
+                myStream.getTracks().forEach(t => t.stop());
+                myStream = null;
+            }
+            removeSelfVideo();
+            $('video-grid').querySelectorAll('.video-card').forEach(v => v.remove());
+            if (!$('empty-msg')) {
+                const em = document.createElement('div');
+                em.className = 'empty-state';
+                em.id = 'empty-msg';
+                em.innerHTML = '<div>👆 Use os botões abaixo para iniciar uma chamada</div>';
+                $('video-grid').appendChild(em);
+            }
+            updateCallUI();
+        }
+    }
+
+    function endCall() {
+        for (const pid of Object.keys(activeCalls)) {
+            try { activeCalls[pid].pc?.close(); } catch (e) {}
+        }
+        activeCalls = {};
+        if (myStream) {
+            myStream.getTracks().forEach(t => t.stop());
+            myStream = null;
+        }
+        callActive = false;
+        removeSelfVideo();
+        $('video-grid').querySelectorAll('.video-card').forEach(v => v.remove());
+        if (!$('empty-msg')) {
+            const em = document.createElement('div');
+            em.className = 'empty-state';
+            em.id = 'empty-msg';
+            em.innerHTML = '<div>👆 Use os botões abaixo para iniciar uma chamada</div>';
+            $('video-grid').appendChild(em);
+        }
+        updateCallUI();
+        addSystem('📞 Chamada encerrada');
+        // Relay call-ended to all members
+        broadcastRelay('call-ended', {});
+    }
+
+    function toggleCallMic() {
+        if (!myStream) return;
+        callMicOn = !callMicOn;
+        myStream.getAudioTracks().forEach(t => t.enabled = callMicOn);
+        const btn = $('call-mute-btn');
+        btn.classList.toggle('muted', !callMicOn);
+        btn.textContent = callMicOn ? '🎤' : '🔇';
+    }
+
+    function toggleCam() {
+        if (!myStream) return;
+        callCamOn = !callCamOn;
+        myStream.getVideoTracks().forEach(t => t.enabled = callCamOn);
+        $('call-cam-btn').classList.toggle('muted', !callCamOn);
+    }
+
+    // ===== Screen Sharing =====
+    async function toggleScreenShare() {
+        if (screenSharing) {
+            // Stop screen sharing
+            await stopScreenShare();
+        } else {
+            // Start screen sharing
+            try {
+                screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: 'always' },
+                    audio: true
+                });
+
+                // Display local preview
+                addSelfScreenCard();
+
+                screenSharing = true;
+                $('call-screen-btn').classList.add('active');
+                $('call-screen-btn').textContent = '⏹️';
+                $('call-screen-btn').title = 'Parar compartilhamento';
+                addSystem('🖥️ Você começou a compartilhar sua tela');
+
+                // Auto-stop when user clicks browser's "Stop sharing" button
+                screenStream.getVideoTracks()[0].onended = () => {
+                    if (screenSharing) {
+                        addSystem('🖥️ Compartilhamento de tela parado');
+                        stopScreenShare();
+                    }
+                };
+
+                // Share screen with all reachable peers.
+                // Host uses direct connections; members route through host.
+                const scrHostConnOpen = peers[hostPeerId]?.conn?.open;
+                for (const [peerId, info] of Object.entries(peers)) {
+                    if (screenCallMap[peerId]) continue;
+                    if (peerId === myId) continue;
+                    const canReach = isHost ? info.conn?.open : scrHostConnOpen;
+                    if (!canReach) continue;
+                    try {
+                        await initiateScreenShareToPeer(peerId);
+                    } catch (e) {
+                        console.error('Screen share error to', peerId, e);
+                    }
+                }
+            } catch (err) {
+                console.error('Screen capture error:', err);
+                if (err.name !== 'NotAllowedError') {
+                    showToast('Erro ao capturar tela.', true);
+                }
+                screenSharing = false;
+            }
+        }
+    }
+
+    async function initiateScreenShareToPeer(targetId) {
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+            ]
+        });
+
+        let videoTrackAdded = false;
+        if (screenStream) {
+            screenStream.getTracks().forEach(track => {
+                if (track.kind === 'video') {
+                    pc.addTrack(track, screenStream);
+                    videoTrackAdded = true;
+                }
+            });
+        }
+
+        if (!videoTrackAdded && myStream && myStream.getVideoTracks().length > 0) {
+            // Fallback: if screen capture has no video track, use camera
+            myStream.getVideoTracks().forEach(track => pc.addTrack(track, myStream));
+        }
+
+        screenCallMap[targetId] = { pc, stream: null };
+
+        pc.ontrack = (event) => {
+            if (event.track.kind === 'video') {
+                addRemoteScreen(targetId, event.streams[0]);
+                screenCallMap[targetId].stream = event.streams[0];
+            }
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                const iceData = {
+                    candidate: {
+                        candidate: event.candidate.candidate,
+                        sdpMid: event.candidate.sdpMid,
+                        sdpMLineIndex: event.candidate.sdpMLineIndex,
+                        usernameFragment: event.candidate.usernameFragment
+                    }
+                };
+                if (isHost) {
+                    const info = peers[targetId];
+                    if (info?.conn?.open) {
+                        info.conn.send({
+                            type: 'relay-screen-ice',
+                            senderId: myId,
+                            targetId: targetId,
+                            roomId: roomId,
+                            payload: iceData
+                        });
+                    }
+                } else {
+                    const hostInfo = peers[hostPeerId];
+                    if (hostInfo?.conn?.open) {
+                        hostInfo.conn.send({
+                            type: 'relay-screen-ice',
+                            senderId: myId,
+                            targetId: targetId,
+                            roomId: roomId,
+                            payload: iceData
+                        });
+                    }
+                }
+            }
+        };
+
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                removeRemoteScreen(targetId);
+                delete screenCallMap[targetId];
+            }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        const screenData = {
+            type: 'relay-screen-offer',
+            senderId: myId,
+            targetId: targetId,
+            roomId: roomId,
+            payload: { sdp: { type: offer.type, sdp: offer.sdp } }
+        };
+
+        if (isHost) {
+            const info = peers[targetId];
+            if (info?.conn?.open) {
+                info.conn.send(screenData);
+            }
+        } else {
+            const hostInfo = peers[hostPeerId];
+            if (hostInfo?.conn?.open) {
+                hostInfo.conn.send(screenData);
+            }
+        }
+    }
+
+    function handleScreenShareOffer(fromPeer, sdp) {
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
+                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+            ]
+        });
+
+        screenCallMap[fromPeer] = { pc, stream: null };
+
+        pc.ontrack = (event) => {
+            if (event.track.kind === 'video') {
+                addRemoteScreen(fromPeer, event.streams[0]);
+                screenCallMap[fromPeer].stream = event.streams[0];
+            }
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                relayScreenMessage(fromPeer, 'relay-screen-ice', {
+                    candidate: {
+                        candidate: event.candidate.candidate,
+                        sdpMid: event.candidate.sdpMid,
+                        sdpMLineIndex: event.candidate.sdpMLineIndex,
+                        usernameFragment: event.candidate.usernameFragment
+                    }
+                });
+            }
+        };
+
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                removeRemoteScreen(fromPeer);
+                delete screenCallMap[fromPeer];
+            }
+        };
+
+        pc.setRemoteDescription(sdp)
+            .then(async () => {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                relayScreenMessage(fromPeer, 'relay-screen-answer', {
+                    sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
+                });
+            })
+            .catch(e => {
+                console.error('Screen share answer error:', e);
+                delete screenCallMap[fromPeer];
+            });
+    }
+
+    function handleScreenShareAnswer(fromPeer, sdp) {
+        const callData = screenCallMap[fromPeer];
+        if (!callData) return;
+        callData.pc.setRemoteDescription(sdp)
+            .then(() => console.log('Screen share answered'))
+            .catch(e => console.error('Screen share answer set error:', e));
+    }
+
+    function handleScreenShareIce(fromPeer, candidate) {
+        const callData = screenCallMap[fromPeer];
+        if (!callData) return;
+        const iceObj = {
+            candidate: candidate.candidate || '',
+            sdpMid: candidate.sdpMid || '0',
+            sdpMLineIndex: candidate.sdpMLineIndex ?? 0,
+            usernameFragment: candidate.usernameFragment || ''
+        };
+        callData.pc.addIceCandidate(iceObj)
+            .catch(e => console.error('Screen share ICE candidate error:', e));
+    }
+
+    async function stopScreenShare() {
+        // Stop sharing with all peers
+        for (const pid of Object.keys(screenCallMap)) {
+            try {
+                screenCallMap[pid].pc?.close();
+            } catch (e) {}
+            removeRemoteScreen(pid);
+        }
+        screenCallMap = {};
+
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => t.stop());
+            screenStream = null;
+        }
+
+        screenSharing = false;
+        $('call-screen-btn').classList.remove('active');
+        $('call-screen-btn').textContent = '🖥️';
+        $('call-screen-btn').title = 'Compartilhar tela';
+
+        removeSelfScreenCard();
+        addSystem('🖥️ Você parou de compartilhar sua tela');
+
+        // Notify all peers
+        const screenData = {
+            type: 'relay-screen-ended',
+            senderId: myId,
+            targetId: null,
+            roomId: roomId,
+            payload: {}
+        };
+        if (isHost) {
+            broadcastRelay('screen-ended', {});
+        } else {
+            sendToHost('screen-ended', {});
+        }
+    }
+
+    function stopScreenShareTo(peerId) {
+        const callData = screenCallMap[peerId];
+        if (!callData) return;
+        try { callData.pc?.close(); } catch (e) {}
+        removeRemoteScreen(peerId);
+        delete screenCallMap[peerId];
+    }
+
+    // ===== Screen Share Video Cards =====
+    function addSelfScreenCard() {
+        let card = document.getElementById('self-screen-card');
+        if (card) card.remove();
+        card = document.createElement('div');
+        card.className = 'video-card self-card screen-card';
+        card.id = 'self-screen-card';
+        card.innerHTML = `
+            <video id="self-screen-video" autoplay muted playsinline></video>
+            <div class="label"><span class="status-dot"></span> 🖥️ Compartilhamento de tela (você)</div>
+        `;
+        const eg = $('video-grid');
+        if (eg.firstChild) eg.insertBefore(card, eg.firstChild);
+        else eg.appendChild(card);
+        const selfScreenVideo = document.getElementById('self-screen-video');
+        if (selfScreenVideo && screenStream) {
+            selfScreenVideo.srcObject = screenStream;
+        }
+    }
+
+    function removeSelfScreenCard() {
+        const el = document.getElementById('self-screen-card');
+        if (el) {
+            const v = el.querySelector('video');
+            if (v && v.srcObject) {
+                v.srcObject.getTracks().forEach(t => t.stop());
+            }
+            el.remove();
+        }
+    }
+
+    function addRemoteScreen(peerId, stream) {
+        removeRemoteScreen(peerId);
+        const info = peers[peerId] || {};
+        const nick = info.nick || peerId.substring(0, 8);
+        const card = document.createElement('div');
+        card.className = 'video-card screen-card';
+        card.id = `vscreen-${peerId}`;
+        card.innerHTML = `
+            <video id="remote-screen-video-${peerId}" autoplay playsinline></video>
+            <div class="label"><span class="status-dot"></span> 🖥️ ${DOMPurify.sanitize(nick, {ALLOW_TAGS: [], ALLOW_ATTR: []})}</div>
+            <button class="btn-close-screen" onclick="stopScreenShareTo('${peerId}')" title="Fechar">✕</button>
+        `;
+        $('video-grid').appendChild(card);
+        const rv = document.getElementById(`remote-screen-video-${peerId}`);
+        if (rv && stream) {
+            rv.srcObject = stream;
+        }
+    }
+
+    function removeRemoteScreen(peerId) {
+        const el = document.getElementById(`vscreen-${peerId}`);
+        if (el) {
+            const v = el.querySelector('video');
+            if (v && v.srcObject) {
+                v.srcObject.getTracks().forEach(t => t.stop());
+            }
+            el.remove();
+        }
+    }
+
+    // ===== Video Cards =====
+    function addSelfCard() {
+        let card = document.getElementById('self-card');
+        if (card) card.remove();
+        card = document.createElement('div');
+        card.className = 'video-card self-card';
+        card.id = 'self-card';
+        card.innerHTML = `
+            <video id="self-video" autoplay muted playsinline></video>
+            <div class="label"><span class="status-dot"></span> ${DOMPurify.sanitize(nickname, {ALLOW_TAGS: [], ALLOW_ATTR: []})} (você)</div>
+        `;
+        const eg = $('video-grid');
+        if (eg.firstChild) eg.insertBefore(card, eg.firstChild);
+        else eg.appendChild(card);
+        const selfVideo = document.getElementById('self-video');
+        if (selfVideo && myStream) {
+            selfVideo.srcObject = myStream;
+        }
+    }
+
+    function removeSelfVideo() {
+        const el = document.getElementById('self-card');
+        if (el) {
+            const v = el.querySelector('video');
+            if (v && v.srcObject) {
+                v.srcObject.getTracks().forEach(t => t.stop());
+            }
+            el.remove();
+        }
+    }
+
+    function addRemoteVideo(peerId, stream) {
+        removeVideoCard(peerId);
+        const info = peers[peerId] || {};
+        const nick = info.nick || peerId.substring(0, 8);
+        const card = document.createElement('div');
+        card.className = 'video-card';
+        card.id = `vcard-${peerId}`;
+        card.innerHTML = `
+            <video id="remote-video-${peerId}" autoplay playsinline></video>
+            <div class="label"><span class="status-dot"></span> ${DOMPurify.sanitize(nick, {ALLOW_TAGS: [], ALLOW_ATTR: []})}</div>
+        `;
+        $('video-grid').appendChild(card);
+        const rv = document.getElementById(`remote-video-${peerId}`);
+        if (rv && stream) {
+            rv.srcObject = stream;
+        }
+    }
+
+    function removeVideoCard(peerId) {
+        const el = document.getElementById(`vcard-${peerId}`);
+        if (el) {
+            const v = el.querySelector('video');
+            if (v && v.srcObject) {
+                v.srcObject.getTracks().forEach(t => t.stop());
+            }
+            el.remove();
+        }
+    }
+
+    // ===== Call UI =====
+    function updateCallUI() {
+        const hasCall = callActive;
+        $('call-audio-btn').style.display = hasCall ? 'none' : '';
+        $('call-video-btn').style.display = hasCall ? 'none' : '';
+        $('call-end-btn').style.display = hasCall ? '' : 'none';
+        $('call-mute-btn').style.display = (hasCall && myStream) ? '' : 'none';
+        $('call-cam-btn').style.display = (hasCall && myStream && myStream.getVideoTracks().length > 0) ? '' : 'none';
+        // Screen share button: show when there are peers available
+        $('call-screen-btn').style.display = Object.keys(peers).length > 0 || callActive ? '' : 'none';
+        const callInfo = $('active-call-info');
+        callInfo.classList.toggle('show', hasCall);
+        if (hasCall) {
+            callInfo.textContent = `📞 Chamada ${callType === 'video' ? 'de vídeo' : 'de áudio'} em andamento`;
+        }
+    }
+
+    // ===== Chat =====
+    function sendMessage() {
+        const inp = $('msg-input');
+        const text = inp.value.trim();
+        if (!text) return;
+
+        addChat(nickname, escapeHtml(text), 'sent');
+        // Host broadcasts directly; members send to host who relays
+        if (isHost) {
+            broadcastRelay('message', { text: text });
+        } else {
+            sendToHost('message', { text: text });
+        }
+        inp.value = '';
+        inp.style.height = 'auto';
+        // Stop typing broadcast
+        if (isHost) {
+            broadcastRelay('stop-typing', {});
+        } else {
+            sendToHost('stop-typing', {});
+        }
+        $('typing-indicator').textContent = '';
+    }
+
+    function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    function addChat(sender, content, type) {
+        const c = $('messages');
+        const d = document.createElement('div');
+        d.className = `message ${type}`;
+        if (type !== 'system') {
+            const s = document.createElement('div');
+            s.className = 'sender';
+            s.textContent = sender;
+            d.appendChild(s);
+        }
+        const inner = document.createElement('div');
+        // HTML-rich content (images, files, audio) starts with a tag — render with sanitization.
+        // Plain text (chat messages, system) uses textContent (inherently safe, no XSS risk).
+        if (typeof content === 'string' && /^<(img|div|a|span)\b/i.test(content.trimStart())) {
+            inner.innerHTML = typeof DOMPurify !== 'undefined'
+                ? DOMPurify.sanitize(content, { ALLOW_TAGS: ['img','div','a','span','br'], ALLOW_ATTR: ['class','src','alt','href','download','style'] })
+                : content;
+        } else {
+            inner.textContent = content ?? '';
+        }
+        d.appendChild(inner);
+        const t = document.createElement('div');
+        t.className = 'time';
+        t.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        d.appendChild(t);
+        c.appendChild(d);
+        c.scrollTop = c.scrollHeight;
+    }
+
+    function addSystem(text) {
+        addChat('', text, 'system');
+    }
+
+    // ===== Media =====
+    function sendImage() { $('file-input').click(); }
+
+    function sendImageFile(file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            addChat(nickname, `<img class="media" src="${e.target.result}" alt="Imagem">`, 'sent');
+            if (isHost) {
+                broadcastRelay('image', { data: e.target.result });
+            } else {
+                sendToHost('image', { data: e.target.result });
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function sendFile() { $('file-input').click(); }
+
+    function sendFileFile(file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            addChat(nickname, `<div>📄 ${file.name} (${formatBytes(file.size)})</div>
+                <a href="${e.target.result}" download="${file.name}" style="color:var(--accent2);font-size:12px;">⬇️ Baixar</a>`, 'sent');
+            const payload = { name: file.name, size: file.size, data: e.target.result, type: file.type };
+            if (isHost) {
+                broadcastRelay('file', payload);
+            } else {
+                sendToHost('file', payload);
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (file.type.startsWith('image/')) {
+            sendImageFile(file);
+        } else {
+            sendFileFile(file);
+        }
+        event.target.value = '';
+    }
+
+    // ===== Voice Recording =====
+    function startVoiceRecording() {
+        if (recMedia) {
+            stopVoiceRecording();
+            return;
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                recMedia = new MediaRecorder(stream);
+                recChunks = [];
+                recMedia.ondataavailable = e => {
+                    if (e.data.size > 0) recChunks.push(e.data);
+                };
+                recMedia.onstop = () => {
+                    const blob = new Blob(recChunks, { type: 'audio/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const tempAudio = new Audio(url);
+                    tempAudio.addEventListener('loadedmetadata', () => {
+                        const duration = Math.round(tempAudio.duration);
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            addChat(nickname, '<div class="audio-recording">🎙️ Áudio enviado</div>', 'sent');
+                            if (isHost) { broadcastRelay('voice', { audio: reader.result, duration: duration }); } else { sendToHost('voice', { audio: reader.result, duration: duration }); }
+                        };
+                        reader.readAsDataURL(blob);
+                        stream.getTracks().forEach(t => t.stop());
+                        URL.revokeObjectURL(url);
+                    });
+                    tempAudio.addEventListener('error', () => {
+                        const duration = Math.round(recChunks.reduce((a, b) => a + b.size, 0) / 16000);
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            addChat(nickname, '<div class="audio-recording">🎙️ Áudio enviado</div>', 'sent');
+                            if (isHost) { broadcastRelay('voice', { audio: reader.result, duration: duration }); } else { sendToHost('voice', { audio: reader.result, duration: duration }); }
+                        };
+                        reader.readAsDataURL(blob);
+                        stream.getTracks().forEach(t => t.stop());
+                        URL.revokeObjectURL(url);
+                    });
+                    recMedia = null;
+                    recChunks = [];
+                    $('rec-indicator').classList.remove('show');
+                    $('voice-btn').classList.remove('active');
+                };
+                recMedia.start();
+                $('rec-indicator').classList.add('show');
+                $('voice-btn').classList.add('active');
+            })
+            .catch(err => {
+                console.error('Mic error:', err);
+                showToast('Permita acesso ao microfone.', true);
+            });
+    }
+
+    function stopVoiceRecording() {
+        if (recMedia && recMedia.state !== 'inactive') {
+            recMedia.stop();
+        }
+    }
+
+    function playVoiceMessage(data) {
+        const audio = new Audio(data);
+        audio.play().catch(e => console.error('Play error:', e));
+    }
+
+    // ===== Typing Indicator =====
+    function handleTyping() {
+        clearTimeout(typingTimer);
+        if (isHost) {
+            broadcastRelay('typing', {});
+        } else {
+            sendToHost('typing', {});
+        }
+        typingTimer = setTimeout(() => {
+            if (isHost) { broadcastRelay('stop-typing', {}); } else { sendToHost('stop-typing', {}); }
+        }, 2000);
+    }
+
+    function handleTypingIndicator(fromPeer, isTyping) {
+        const info = peers[fromPeer];
+        const nick = info?.nick || fromPeer.substring(0, 6);
+        if (isTyping) {
+            typingPeers[fromPeer] = Date.now();
+            const others = Object.keys(typingPeers).filter(p => p !== myId);
+            if (others.length > 0) {
+                $('typing-indicator').textContent = others.map(p => (peers[p]?.nick || p.substring(0, 6))).join(', ') + ' está digitando...';
+            }
+        } else {
+            delete typingPeers[fromPeer];
+            if (Object.keys(typingPeers).length === 0) {
+                $('typing-indicator').textContent = '';
+            }
+        }
+    }
+
+    function handleInputKey(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+        const ta = e.target;
+        ta.style.height = 'auto';
+        ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+    }
+
+    // ===== Emoji Picker =====
+    function toggleEmojiPicker() {
+        $('emoji-picker').classList.toggle('show');
+    }
+
+    function insertEmoji(emoji) {
+        const inp = $('msg-input');
+        inp.value += emoji;
+        inp.focus();
+        $('emoji-picker').classList.remove('show');
+    }
+
+    // ===== Share =====
+    function updateShareLink() {
+        const shareUrl = `${location.origin}${location.pathname}?room=${roomId}`;
+        $('share-link').value = shareUrl;
+        const url = new URL(location);
+        url.searchParams.set('room', roomId);
+        history.replaceState(null, '', url);
+    }
+
+    function copyShareLink() {
+        const inp = $('share-link');
+        inp.select();
+        navigator.clipboard?.writeText(inp.value).then(() => {
+            showToast('Link copiado!');
+        }).catch(() => {
+            document.execCommand('copy');
+            showToast('Link copiado!');
+        });
+    }
+
+    function copyRoomId() {
+        navigator.clipboard?.writeText(roomId).then(() => {
+            showToast(`ID ${roomId.toUpperCase()} copiado!`);
+        }).catch(() => {
+            showToast(`ID: ${roomId.toUpperCase()}`);
+        });
+    }
+
+    function generateInviteLink() {
+        const name = $('invite-name').value.trim();
+        if (!name) { showToast('Digite o nome do convidado.', true); return; }
+        const url = `${location.origin}${location.pathname}?room=${roomId}&nick=${encodeURIComponent(name)}`;
+        $('invite-link-out').value = url;
+        $('invite-result').classList.add('show');
+        // Auto-copy to clipboard
+        navigator.clipboard?.writeText(url).then(() => {
+            showToast(`Link para ${name} copiado!`);
+        }).catch(() => {
+            $('invite-link-out').select();
+            document.execCommand('copy');
+            showToast(`Link para ${name} copiado!`);
+        });
+    }
+
+    function copyInviteLink() {
+        const inp = $('invite-link-out');
+        navigator.clipboard?.writeText(inp.value).then(() => {
+            showToast('Link de convite copiado!');
+        }).catch(() => {
+            inp.select();
+            document.execCommand('copy');
+            showToast('Link de convite copiado!');
+        });
+    }
+
+    // ===== UI Updates =====
+    function showRoom() {
+        hide('join-screen');
+        show('room-screen');
+        $('room-id-display').textContent = 'Sala: ' + roomId.toUpperCase();
+        updateShareLink();
+        updateOnline();
+        updateCallUI();
+    }
+
+    function updateOnline() {
+        // Count members with known nicknames (excluding host)
+        const members = Object.values(peers).filter(p => p.nick && p.isMember).length;
+        // Host counts self + members. Members count self + members + host.
+        const total = isHost ? 1 + members : 1 + members + 1;
+        $('online-count').textContent = `${total} online${total > 1 ? 's' : ''}`;
+    }
+
+    function leaveRoom() {
+        // Notify host we're leaving
+        const hostInfo = peers[hostPeerId];
+        if (hostInfo?.conn?.open) {
+            try {
+                hostInfo.conn.send({
+                    type: 'leave',
+                    nickname: nickname,
+                    roomId: roomId
+                });
+            } catch(e) {}
+        }
+
+        addSystem('Você saiu da sala');
+
+        for (const pid of Object.keys(activeCalls)) {
+            try { activeCalls[pid].pc?.close(); } catch (e) {}
+        }
+        activeCalls = {};
+        if (myStream) { myStream.getTracks().forEach(t => t.stop()); myStream = null; }
+        callActive = false;
+        removeSelfVideo();
+        $('video-grid').querySelectorAll('.video-card').forEach(v => v.remove());
+
+        if (hostPingTimer) {
+            clearInterval(hostPingTimer);
+            hostPingTimer = null;
+        }
+
+        // Stop screen sharing if active
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => t.stop());
+            screenStream = null;
+        }
+        screenSharing = false;
+        screenCallMap = {};
+
+        if (myPeer) {
+            myPeer.destroy();
+            myPeer = null;
+        }
+        peers = {};
+        activeCalls = {};
+        isHost = false;
+
+        show('join-screen');
+        showToast('Saiu da sala');
+    }
+
+    function toggleParticipants() {
+        const count = Object.keys(peers).length + (isHost ? 1 : 1);
+        showToast(`${count} participantes`);
+    }
+
+    // ===== Utilities =====
+    function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function showToast(msg, isError) {
+        const t = $('toast');
+        t.textContent = msg;
+        t.className = 'toast show' + (isError ? ' error' : '');
+        clearTimeout(t._timer);
+        t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // ===== Start =====
+    init();
+    </script>
+</body>
+</html>
