@@ -1233,7 +1233,7 @@
             stream.getTracks().forEach(track => pc.addTrack(track, stream));
         }
 
-        activeCalls[targetId] = { pc, stream: stream };
+        activeCalls[targetId] = { pc, stream: null }; // stream will be set by ontrack when remote tracks arrive
 
         pc.ontrack = (event) => {
             const stream = event.streams[0];
@@ -1407,13 +1407,38 @@
 
         pc.setRemoteDescription(sdp)
             .then(async () => {
+                // If we haven't started a call yet, request camera/mic now so we can send video back
+                if (!myStream) {
+                    const hasVideo = sdp.sdp && sdp.sdp.includes('m=video');
+                    try {
+                        myStream = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                            video: hasVideo
+                        });
+                        callActive = true;
+                        callType = hasVideo ? 'video' : 'audio';
+                        updateCallUI();
+                    } catch(e) {
+                        // Try audio-only if video fails
+                        try {
+                            myStream = await navigator.mediaDevices.getUserMedia({
+                                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                                video: false
+                            });
+                            callActive = true;
+                            callType = 'audio';
+                            updateCallUI();
+                        } catch(e2) {
+                            console.warn('No media available for incoming call:', e2);
+                        }
+                    }
+                }
                 if (myStream) {
                     myStream.getTracks().forEach(t => pc.addTrack(t, myStream));
                     addSelfCard();
                 }
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                // Convert to plain object for JSON serialization over DataChannel
                 relayCallMessage(fromPeer, 'relay-call-answer-sdp', {
                     sdp: {
                         type: pc.localDescription.type,
@@ -1434,11 +1459,7 @@
         // No need for new RTCSessionDescription wrapping
         callData.pc.setRemoteDescription(sdp)
             .then(() => {
-                console.log('Call answered');
-                // Ensure we show the remote video card once answer is ready
-                if (callData.stream) {
-                    addRemoteVideo(fromPeer, callData.stream);
-                }
+                console.log('Call answered, waiting for remote tracks via ontrack');
             })
             .catch(e => console.error('Answer set error:', e));
     }
