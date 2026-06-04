@@ -28,7 +28,12 @@
         /* ===== JOIN SCREEN ===== */
         .logo { font-size: 72px; margin-bottom: 8px; animation: pulse 2.5s ease-in-out infinite; filter: drop-shadow(0 4px 20px rgba(0,168,132,0.3)); }
         @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
-        h1.title { font-size: 36px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight: 800; letter-spacing: -1px; }
+        .title-link { text-decoration: none; color: inherit; cursor: pointer; }
+        .title-link h1.title { font-size: 36px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight: 800; letter-spacing: -1px; }
+        .title-link:hover h1.title { opacity: 0.8; }
+        .room-title-link { text-decoration: none; color: inherit; cursor: pointer; }
+        .room-title-link h2 { font-size: 24px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight: 700; letter-spacing: -0.5px; }
+        .room-title-link:hover h2 { opacity: 0.8; }
         .subtitle { color: var(--text2); font-size: 14px; margin-bottom: 4px; }
         .tagline { color: var(--text2); font-size: 12px; opacity: 0.6; }
 
@@ -53,7 +58,8 @@
 
         /* ===== ROOM ===== */
         .room-top-bar { display: flex; align-items: center; padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 10px; flex-shrink: 0; }
-        .room-top-bar .back-btn { background: none; border: none; color: var(--text2); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+        .back-link { text-decoration: none; color: inherit; cursor: pointer; }
+        .back-link .back-btn { background: none; border: none; color: var(--text2); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
         .room-top-bar .back-btn:hover { background: var(--bg3); }
         .room-top-bar .room-info { flex: 1; }
         .room-top-bar .room-info h2 { font-size: 16px; font-weight: 700; }
@@ -206,7 +212,9 @@
     <!-- JOIN SCREEN -->
     <div id="join-screen" class="active">
         <div class="logo">💬</div>
-        <h1 class="title">HowApp</h1>
+        <a href="https://faunasci.github.io/howapp" class="title-link">
+            <h1 class="title">HowApp</h1>
+        </a>
         <p class="subtitle">Comunicação P2P sem servidor</p>
         <p class="tagline">Texto · Áudio · Vídeo · Sem cadastro</p>
 
@@ -237,9 +245,13 @@
     <div id="room-screen">
         <!-- Top bar -->
         <div class="room-top-bar">
-            <button class="back-btn" onclick="leaveRoom()" title="Sair da sala">←</button>
+            <a href="https://faunasci.github.io/howapp" class="back-link" title="Voltar">
+                <button class="back-btn">←</button>
+            </a>
             <div class="room-info">
-                <h2>HowApp</h2>
+                <a href="https://faunasci.github.io/howapp" class="room-title-link">
+                    <h2>HowApp</h2>
+                </a>
                 <span class="room-id" id="room-id-display"></span>
             </div>
             <div class="room-actions">
@@ -485,6 +497,8 @@
                     iceServers: [
                         { urls: 'stun:stun1.l.google.com:19302' },
                         { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'turn:openrelay.metered.ca:3478', username: 'openrelay2', credential: 'openrelay' },
+                    
                     ]
                 }
             });
@@ -553,9 +567,11 @@
                 iceServers: [
                     { urls: 'stun:stun1.l.google.com:19302' },
                     { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
-                    { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
-                    { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+                    { urls: 'turn:openrelay.metered.ca:3478', username: 'openrelay2', credential: 'openrelay' },
+                    
+                    
+                    
+                    
                 ]
             }
         });
@@ -1222,9 +1238,11 @@
             iceServers: [
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+                    { urls: 'turn:openrelay.metered.ca:3478', username: 'openrelay2', credential: 'openrelay' },
+                    
+                
+                
+                
             ]
         });
 
@@ -1360,9 +1378,11 @@
             iceServers: [
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+                    { urls: 'turn:openrelay.metered.ca:3478', username: 'openrelay2', credential: 'openrelay' },
+                    
+                
+                
+                
             ]
         });
 
@@ -1605,9 +1625,11 @@
             iceServers: [
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+                    { urls: 'turn:openrelay.metered.ca:3478', username: 'openrelay2', credential: 'openrelay' },
+                    
+                
+                
+                
             ]
         });
 
@@ -1707,9 +1729,11 @@
             iceServers: [
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'turn:turn.openrelay.metered.ca:80', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turn:turn.openrelay.metered.ca:443?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
-                { urls: 'turns:turn.openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+                    { urls: 'turn:openrelay.metered.ca:3478', username: 'openrelay2', credential: 'openrelay' },
+                    
+                
+                
+                
             ]
         });
 
