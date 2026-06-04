@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HowApp</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" integrity="sha512-Y1p/STLW/B+l+MPJ5K5OdILMwJa2gMFXXmC/qsyDuGH9uc1MZMUo6/8YQUg9Ut4ns8KGCrCtt+58UwmNFFiVvA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="toast" class="toast"></div>
+
+    <!-- JOIN SCREEN -->
+    <div id="join-screen" class="active">
+        <div class="logo">💬</div>
+        <a href="https://faunasci.github.io/howapp" class="title-link">
+            <h1 class="title">HowApp</h1>
+        </a>
+        <p class="subtitle">Comunicação P2P sem servidor</p>
+        <p class="tagline">Texto · Áudio · Vídeo · Sem cadastro</p>
+
+        <div class="join-card">
+            <div class="input-group">
+                <label>Seu nome</label>
+                <input type="text" id="nickname" placeholder="Como quer ser chamado?" maxlength="20" autofocus>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="createRoom()">🏠 Criar Nova Sala</button>
+            <div class="divider"></div>
+            <p class="or">— ou entre em uma sala —</p>
+            <div class="input-group">
+                <label>ID da sala ou link completo</label>
+                <input type="text" id="room-link" placeholder="Ex: abc123 ou https://...?room=abc123">
+            </div>
+            <button class="btn btn-secondary btn-block" onclick="joinRoom()">🔗 Entrar na Sala</button>
+        </div>
+        <p class="tagline" style="margin-top: 10px;">🔒 Tudo é ponto a ponto — suas mensagens não passam por servidores</p>
+    </div>
+
+    <!-- LOADING SCREEN -->
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <p id="loading-text" style="color: var(--text2); font-size: 14px;">Conectando...</p>
+    </div>
+
+    <!-- ROOM SCREEN -->
+    <div id="room-screen">
+        <!-- Top bar -->
+        <div class="room-top-bar">
+            <a href="https://faunasci.github.io/howapp" class="back-link" title="Voltar">
+                <button class="back-btn">←</button>
+            </a>
+            <div class="room-info">
+                <a href="https://faunasci.github.io/howapp" class="room-title-link">
+                    <h2>HowApp</h2>
+                </a>
+                <span class="room-id" id="room-id-display"></span>
+            </div>
+            <div class="room-actions">
+                <button class="btn btn-secondary btn-sm" onclick="toggleParticipants()" title="Participantes" id="btn-participants" style="display:none;">👥</button>
+                <button class="btn btn-secondary btn-sm" onclick="leaveRoom()" title="Sair">🚪</button>
+            </div>
+        </div>
+
+        <!-- Share bar -->
+        <div class="share-bar">
+            <span>📋 Compartilhar:</span>
+            <input type="text" id="share-link" readonly>
+            <button onclick="copyShareLink()">Copiar Link</button>
+            <button onclick="copyRoomId()" id="btn-copy-id" style="background: var(--bg3);">Copiar ID</button>
+        </div>
+
+        <!-- Invite bar -->
+        <div class="invite-bar" id="invite-bar">
+            <span>👤 Convidar:</span>
+            <input type="text" id="invite-name" placeholder="Nome do convidado" maxlength="20" onkeydown="if(event.key==='Enter') generateInviteLink()">
+            <button onclick="generateInviteLink()">Gerar Link</button>
+            <div class="invite-result" id="invite-result">
+                <input type="text" id="invite-link-out" readonly>
+                <button class="secondary" id="invite-copy-btn" onclick="copyInviteLink()">Copiar</button>
+            </div>
+        </div>
+
+        <!-- Active call info -->
+        <div class="active-call-info" id="active-call-info">
+            <span>📞 Chamada em andamento</span>
+        </div>
+
+        <!-- Room body -->
+        <div class="room-body" id="room-body">
+            <!-- Video grid -->
+            <div class="video-grid" id="video-grid">
+                <div class="empty-state" id="empty-msg">
+                    <div>👆 Use os botões abaixo para iniciar uma chamada de áudio ou vídeo</div>
+                </div>
+            </div>
+
+            <!-- Chat panel -->
+            <div class="chat-panel" id="chat-panel">
+                <div class="chat-header">
+                    <h3>💬 Conversa</h3>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="online-count" id="online-count">1 online</span>
+                        <div class="rec-indicator" id="rec-indicator"><div class="rec-dot"></div>Gravando áudio</div>
+                    </div>
+                </div>
+                <div class="messages" id="messages"></div>
+                <div class="typing-indicator" id="typing-indicator"></div>
+                <div style="position:relative;">
+                    <!-- Emoji picker -->
+                    <div class="emoji-picker" id="emoji-picker"></div>
+                    <div class="chat-input-area">
+                        <div class="msg-actions">
+                            <button class="icon-btn" onclick="toggleEmojiPicker()" title="Emoji" id="emoji-btn">😊</button>
+                            <button class="icon-btn" onclick="startVoiceRecording()" id="voice-btn" title="Gravar áudio">🎙️</button>
+                            <button class="icon-btn" onclick="sendImage()" title="Enviar imagem">📷</button>
+                            <button class="icon-btn" onclick="sendFile()" title="Enviar arquivo">📎</button>
+                        </div>
+                        <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+                            <textarea id="msg-input" rows="1" placeholder="Mensagem..." onkeydown="handleInputKey(event)" oninput="handleTyping()"></textarea>
+                        </div>
+                        <button class="icon-btn" onclick="sendMessage()" style="background:var(--accent);color:white;" title="Enviar">➤</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Call bar -->
+        <div class="call-bar" id="call-bar">
+            <button class="call-btn audio-btn" id="call-audio-btn" onclick="startCall('audio')" title="Chamada de áudio">📞</button>
+            <button class="call-btn video-btn" id="call-video-btn" onclick="startCall('video')" title="Chamada de vídeo">📹</button>
+            <button class="call-btn" id="call-mute-btn" onclick="toggleCallMic()" title="Mudo" style="display:none;">🎤</button>
+            <button class="call-btn" id="call-cam-btn" onclick="toggleCam()" title="Câmera" style="display:none;">📷</button>
+            <button class="call-btn screen-share-btn" id="call-screen-btn" onclick="toggleScreenShare()" title="Compartilhar tela" style="display:none;">🖥️</button>
+            <button class="call-btn end-call" id="call-end-btn" onclick="endCall()" title="Encerrar" style="display:none;">⏹️</button>
+        </div>
+    </div>
+
+    <input type="file" id="file-input" accept="image/*,video/*,audio/*" style="display:none" onchange="handleFileSelect(event)">
+
+    <script src="app.js"></script>
+    <script src="p2p.js"></script>
+</body>
+</html>
