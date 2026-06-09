@@ -181,6 +181,8 @@ function connectToHost() {
     conn.on('close', () => {
         console.log('Connection to host lost');
         clearInterval(heartbeatInterval);
+        // Limpar referência ao host antigo para discoverNewHost funcionar
+        if (peers[hostPeerId]) delete peers[hostPeerId];
         scheduleReconnect();
     });
 
@@ -195,7 +197,13 @@ function scheduleReconnect() {
     if (!myPeer || myPeer.destroyed || isHost) return;
     reconnectAttempts++;
     if (reconnectAttempts > 10) {
-        showToast('Conexão perdida. Recarregue a página.', true);
+        // Tentar descobrir novo host entre os membros conhecidos
+        discoverNewHost();
+        return;
+    }
+    // Se o host original falhou 3 vezes, tentar descobrir novo host mais cedo
+    if (reconnectAttempts === 3) {
+        discoverNewHost();
         return;
     }
     const delay = Math.min(2000 * Math.pow(1.5, reconnectAttempts - 1), 30000);
@@ -205,6 +213,38 @@ function scheduleReconnect() {
             connectToHost();
         }
     }, delay);
+}
+
+function discoverNewHost() {
+    // Calcular quem seria o novo host (primeiro peerID sorted)
+    const sorted = [...Object.keys(peers), myId].sort();
+    const newHostId = sorted[0];
+
+    if (newHostId === myId) {
+        // Somos o novo host
+        addSystem('📌 Você é o novo anfitrião');
+        promoteToHost();
+        return;
+    }
+
+    // Verificar se temos conexão com o novo host
+    const newHostInfo = peers[newHostId];
+    if (newHostInfo?.conn?.open) {
+        addSystem(`🔍 Conectando ao novo anfitrião: ${newHostInfo.nick || newHostId}`);
+        hostPeerId = newHostId;
+        reconnectAttempts = 0;
+        connectToHost();
+        return;
+    }
+
+    // Não temos conexão direta — tentar conectar diretamente ao peerID do novo host
+    // (o novo host pode ainda ter seu peer aberto e receber novas conexões)
+    addSystem(`🔍 Tentando conectar diretamente ao novo anfitrião...`);
+    hostPeerId = newHostId;
+    reconnectAttempts = 0;
+    // Limpar conexão antiga que está fechada
+    if (peers[hostPeerId]) delete peers[hostPeerId];
+    connectToHost();
 }
 
 // ===== Member: Send message to host (who relays to everyone) =====
@@ -265,7 +305,7 @@ function handleMessage(data, fromPeer) {
             break;
 
         case 'member-joined':
-            if (data.nickname && data.nickname !== nickname) {
+            if (data.peerId !== myId && data.nickname) {
                 addSystem(`👋 ${data.nickname} entrou na sala`);
                 updateOnline();
                 updateCallUI();
@@ -279,6 +319,7 @@ function handleMessage(data, fromPeer) {
             break;
 
         case 'message':
+            if (data.senderId === myId) break; // Skip own messages (already added in app.js)
             addChat(data.payload.nickname || data.senderId.substring(0, 6), data.payload.text, 'received');
             broadcastRelay('message', { text: data.payload.text }, data.senderId);
             break;
@@ -299,6 +340,7 @@ function handleMessage(data, fromPeer) {
 
         case 'voice':
             {
+                if (data.senderId === myId) break; // Skip own messages (already added in app.js)
                 const voiceNick = data.payload.nickname || data.senderId.substring(0, 6);
                 const voiceMsgEl = document.createElement('div');
                 voiceMsgEl.className = 'audio-recording';
@@ -328,7 +370,7 @@ function handleMessage(data, fromPeer) {
             break;
 
         case 'leave':
-            handlePeerLeft(fromPeer);
+            if (fromPeer !== myId) handlePeerLeft(fromPeer);
             break;
 
         case 'typing':
@@ -342,10 +384,12 @@ function handleMessage(data, fromPeer) {
                         addChat(data.payload.nickname || data.senderId.substring(0, 6), data.payload.text, 'received');
                         break;
                     case 'image':
+                        if (data.senderId === myId) break; // Skip own relayed image messages (already added in app.js)
                         addChat(data.payload.nickname || data.senderId.substring(0, 6),
                             `<img class="media" src="${data.payload.data}" alt="Imagem">`, 'received');
                         break;
                     case 'file':
+                        if (data.senderId === myId) break; // Skip own relayed file messages (already added in app.js)
                         addChat(data.payload.nickname || data.senderId.substring(0, 6),
                             `<div>📄 ${data.payload.name} (${formatBytes(data.payload.size)})</div>
                              <a href="${data.payload.data}" download="${data.payload.name}" style="color:var(--accent2);font-size:12px;">⬇️ Baixar</a>`,
@@ -353,6 +397,7 @@ function handleMessage(data, fromPeer) {
                         break;
                     case 'voice':
                         {
+                            if (data.senderId === myId) break; // Skip own relayed voice messages (already added in app.js)
                             const voiceNick = data.payload.nickname || data.senderId.substring(0, 6);
                             const voiceMsgEl = document.createElement('div');
                             voiceMsgEl.className = 'audio-recording';
@@ -458,9 +503,32 @@ function handleMessage(data, fromPeer) {
             break;
 
         case 'host-vacated':
-            if (Object.keys(peers).length === 0) {
-                addSystem('⚠️ Sem anfitrião — promovendo para anfitrião');
-                promoteToHost();
+            if (data.senderId !== myId) {
+                if (Object.keys(peers).length === 0) {
+                    addSystem('⚠️ Sem anfitrião — promovendo para anfitrião');
+                    promoteToHost();
+                } else {
+                    // Outro membro foi promovido — atualizar hostPeerId
+                    addSystem(`📌 Anfitrião mudou para: ${data.senderId}`);
+                    hostPeerId = data.senderId;
+                    if (!isHost && myPeer && !myPeer.destroyed) {
+                        connectToHost();
+                    }
+                }
+            }
+            break;
+
+        case 'new-host':
+            if (data.senderId !== myId) {
+                const oldHost = hostPeerId;
+                hostPeerId = data.senderId;
+                if (oldHost !== hostPeerId) {
+                    addSystem(`📌 Novo anfitrião: ${peers[data.senderId]?.nick || data.senderId}`);
+                    // Reconectar ao novo host se não sou o host
+                    if (!isHost && myPeer && !myPeer.destroyed) {
+                        connectToHost();
+                    }
+                }
             }
             break;
 
@@ -549,6 +617,7 @@ function broadcastRelay(type, extra, senderIdOverride) {
 // ===== Peer Leave =====
 function handlePeerLeft(peerId) {
     const info = peers[peerId];
+    if (!info) return; // Already left
     const nick = info?.nick || peerId.substring(0, 6);
     if (peerId === hostPeerId) {
         addSystem(`🏠 O anfitrião (${nick}) saiu da sala`);
@@ -560,8 +629,32 @@ function handlePeerLeft(peerId) {
             if (myId === designatedHost) {
                 promoteToHost();
                 addSystem('⚠️ Você foi promovido a anfitrião');
+                // Notificar todos os membros sobre o novo host
+                for (const [pid, info] of Object.entries(peers)) {
+                    if (info.conn?.open) {
+                        try {
+                            info.conn.send({
+                                type: 'new-host',
+                                senderId: myId,
+                                roomId: roomId
+                            });
+                        } catch(e) {}
+                    }
+                }
             } else {
                 hostPeerId = designatedHost;
+                // Notificar todos sobre o novo host
+                for (const [pid, info] of Object.entries(peers)) {
+                    if (info.conn?.open && pid !== myId) {
+                        try {
+                            info.conn.send({
+                                type: 'new-host',
+                                senderId: designatedHost,
+                                roomId: roomId
+                            });
+                        } catch(e) {}
+                    }
+                }
                 setTimeout(() => {
                     if (!isHost && myPeer && !myPeer.destroyed) {
                         connectToHost();
@@ -592,6 +685,7 @@ function handlePeerLeft(peerId) {
 function promoteToHost() {
     isHost = true;
     hostPeerId = myId;
+    // Membro não adicionava listener de connection, só o host tinha
     if (!myPeer._hasConnListener) {
         myPeer._hasConnListener = true;
         myPeer.on('connection', (conn) => {
@@ -899,25 +993,55 @@ function endCallTo(peerId) {
 }
 
 function endCall() {
+    // Fechar screen share calls
+    for (const pid of Object.keys(screenCallMap)) {
+        try { screenCallMap[pid].pc?.close(); } catch (e) {}
+    }
+    screenCallMap = {};
+
+    // Fechar todas as chamadas de vídeo/áudio
     for (const pid of Object.keys(activeCalls)) {
         try { activeCalls[pid].pc?.close(); } catch (e) {}
     }
     activeCalls = {};
+
+    // Parar streams locais
     if (myStream) {
         myStream.getTracks().forEach(t => t.stop());
         myStream = null;
     }
+
+    // Sair do fullscreen se estiver ativo
+    if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+    }
+
     callActive = false;
-    removeSelfVideo();
     $('video-grid').querySelectorAll('.video-card').forEach(v => v.remove());
     if (!$('empty-msg')) {
         const em = document.createElement('div');
         em.className = 'empty-state';
         em.id = 'empty-msg';
-        em.innerHTML = '<div>👆 Use os botões abaixo para iniciar uma chamada</div>';
+        em.innerHTML = '<div>👆 Use os botões abaixo para iniciar uma chamada de áudio ou vídeo</div>';
         $('video-grid').appendChild(em);
     }
+    // Reset call buttons
+    $('call-mute-btn').style.display = 'none';
+    $('call-cam-btn').style.display = 'none';
+    $('call-screen-btn').style.display = 'none';
+    $('call-end-btn').style.display = 'none';
+    $('call-audio-btn').style.display = '';
+    $('call-video-btn').style.display = '';
+    $('call-mute-btn').classList.remove('muted');
+    $('call-cam-btn').classList.remove('muted');
+    $('call-screen-btn').classList.remove('muted');
+    callMicOn = true;
+    callCamOn = true;
+    screenSharing = false;
+
     updateCallUI();
+    $('active-call-info').classList.remove('show');
+    stopCallTimer();
     addSystem('📞 Chamada encerrada');
     broadcastRelay('call-ended', {});
 }
@@ -995,6 +1119,8 @@ async function initiateScreenShareToPeer(targetId) {
             if (track.kind === 'video') {
                 pc.addTrack(track, screenStream);
                 videoTrackAdded = true;
+            } else if (track.kind === 'audio') {
+                pc.addTrack(track, screenStream);
             }
         });
     }
@@ -1191,6 +1317,7 @@ function addSelfScreenCard() {
     card.innerHTML = `
         <video id="self-screen-video" autoplay muted playsinline></video>
         <div class="label"><span class="status-dot"></span> 🖥️ Compartilhamento de tela (você)</div>
+        <button class="btn-fullscreen" onclick="toggleFullscreen('self-screen-video')" title="Tela cheia">⛶</button>
     `;
     const eg = $('video-grid');
     if (eg.firstChild) eg.insertBefore(card, eg.firstChild);
@@ -1222,6 +1349,7 @@ function addRemoteScreen(peerId, stream) {
     card.innerHTML = `
         <video id="remote-screen-video-${peerId}" autoplay playsinline></video>
         <div class="label"><span class="status-dot"></span> 🖥️ ${DOMPurify.sanitize(nick, {ALLOW_TAGS: [], ALLOW_ATTR: []})}</div>
+        <button class="btn-fullscreen" onclick="toggleFullscreen('remote-screen-video-${peerId}')" title="Tela cheia">⛶</button>
         <button class="btn-close-screen" onclick="stopScreenShareTo('${peerId}')" title="Fechar">✕</button>
     `;
     $('video-grid').appendChild(card);
@@ -1240,6 +1368,20 @@ function removeRemoteScreen(peerId) {
     }
 }
 
+// ===== Fullscreen =====
+function toggleFullscreen(videoId) {
+    const el = document.getElementById(videoId);
+    if (!el) return;
+    if (!document.fullscreenElement) {
+        el.requestFullscreen().catch(err => {
+            console.warn('Fullscreen error:', err);
+            showToast('⚠️ Tela cheia não disponível');
+        });
+    } else {
+        document.exitFullscreen();
+    }
+}
+
 // ===== Video Cards =====
 function addSelfCard() {
     let card = document.getElementById('self-card');
@@ -1250,6 +1392,7 @@ function addSelfCard() {
     card.innerHTML = `
         <video id="self-video" autoplay muted playsinline></video>
         <div class="label"><span class="status-dot"></span> ${DOMPurify.sanitize(nickname, {ALLOW_TAGS: [], ALLOW_ATTR: []})} (você)</div>
+        <button class="btn-fullscreen" onclick="toggleFullscreen('self-video')" title="Tela cheia">⛶</button>
     `;
     const eg = $('video-grid');
     if (eg.firstChild) eg.insertBefore(card, eg.firstChild);
@@ -1257,6 +1400,26 @@ function addSelfCard() {
     const selfVideo = document.getElementById('self-video');
     if (selfVideo && myStream) {
         selfVideo.srcObject = myStream;
+    }
+}
+
+function addRemoteVideo(peerId, stream) {
+    removeVideoCard(peerId);
+    const info = peers[peerId] || {};
+    const nick = info.nick || peerId.substring(0, 8);
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.id = `vcard-${peerId}`;
+    card.innerHTML = `
+        <video id="remote-video-${peerId}" autoplay playsinline></video>
+        <div class="label"><span class="status-dot"></span> ${DOMPurify.sanitize(nick, {ALLOW_TAGS: [], ALLOW_ATTR: []})}</div>
+        <button class="btn-fullscreen" onclick="toggleFullscreen('remote-video-${peerId}')" title="Tela cheia">⛶</button>
+        <button class="btn-close-screen" onclick="endCallTo('${peerId}')" title="Encerrar chamada">✕</button>
+    `;
+    $('video-grid').appendChild(card);
+    const rv = document.getElementById(`remote-video-${peerId}`);
+    if (rv && stream) {
+        rv.srcObject = stream;
     }
 }
 
@@ -1271,29 +1434,11 @@ function removeSelfVideo() {
     }
 }
 
-function addRemoteVideo(peerId, stream) {
-    removeVideoCard(peerId);
-    const info = peers[peerId] || {};
-    const nick = info.nick || peerId.substring(0, 8);
-    const card = document.createElement('div');
-    card.className = 'video-card';
-    card.id = `vcard-${peerId}`;
-    card.innerHTML = `
-        <video id="remote-video-${peerId}" autoplay playsinline></video>
-        <div class="label"><span class="status-dot"></span> ${DOMPurify.sanitize(nick, {ALLOW_TAGS: [], ALLOW_ATTR: []})}</div>
-    `;
-    $('video-grid').appendChild(card);
-    const rv = document.getElementById(`remote-video-${peerId}`);
-    if (rv && stream) {
-        rv.srcObject = stream;
-    }
-}
-
 function removeVideoCard(peerId) {
     const el = document.getElementById(`vcard-${peerId}`);
     if (el) {
         const v = el.querySelector('video');
-        if (v) { v.srcObject = null; }
+        if (v) v.srcObject = null;
         el.remove();
     }
 }
@@ -1311,5 +1456,8 @@ function updateCallUI() {
     callInfo.classList.toggle('show', hasCall);
     if (hasCall) {
         callInfo.textContent = `📞 Chamada ${callType === 'video' ? 'de vídeo' : 'de áudio'} em andamento`;
+        startCallTimer();
+    } else {
+        stopCallTimer();
     }
 }

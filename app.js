@@ -92,10 +92,11 @@ function sanitizeForPeer(str) {
 }
 
 function makeMemberId(roomId, nickname) {
-    const safeRoom = sanitizeForPeer(roomId);
-    const safeNick = sanitizeForPeer(nickname);
     const unique = Math.random().toString(36).substring(2, 8);
-    return safeRoom + '-' + safeNick + '-' + unique;
+    const safeNick = sanitizeForPeer(nickname);
+    // Prefix com 'm-' para evitar conflito de prefixo com roomId no PeerJS
+    // Quando nick == roomId, IDs como 'abc123-abc123-xyz' podem colidir com prefixo do host 'abc123'
+    return 'm-' + unique + '-' + safeNick;
 }
 
 function extractRoomId(input) {

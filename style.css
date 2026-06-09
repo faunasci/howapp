@@ -93,6 +93,8 @@ input::placeholder { color: var(--text2); opacity: 0.5; }
 .video-card.screen-card .status-dot { background: var(--accent2); }
 .video-card .btn-close-screen { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5); border: none; color: white; border-radius: 50%; width: 28px; height: 28px; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.2s; }
 .video-card .btn-close-screen:hover { opacity: 1; background: var(--danger); }
+.video-card .btn-fullscreen { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.5); border: none; color: white; border-radius: 50%; width: 28px; height: 28px; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.2s; }
+.video-card .btn-fullscreen:hover { opacity: 1; background: var(--accent); }
 @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.4} }
 .video-card .volume-icon { position: absolute; top: 10px; right: 10px; font-size: 16px; }
 
