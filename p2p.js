@@ -7,12 +7,82 @@ const ICE_SERVERS = {
     iceServers: [
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        // TURN UDP (padrão)
         { urls: 'turn:openrelay.metered.ca:3478', username: 'openrelay2', credential: 'openrelay' },
-    ]
+        // TURN TCP (firewalls restritivos)
+        { urls: 'turn:openrelay.metered.ca:3478?transport=tcp', username: 'openrelay2', credential: 'openrelay' },
+        // TURN TLS (redes corporativas que bloqueiam UDP e TCP não-padrão)
+        { urls: 'turns:openrelay.metered.ca:443', username: 'openrelay2', credential: 'openrelay' },
+    ],
+    iceCandidatePoolSize: 10
 };
 
+// ===== Video Quality Profiles =====
+const VIDEO_CONSTRAINTS = {
+    high: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
+    medium: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 24 } },
+    low: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 15 } },
+};
+const VIDEO_BITRATES = { high: 1500000, medium: 800000, low: 400000 };
+const SCREEN_BITRATES = { high: 2500000, medium: 1500000, low: 800000 };
+let currentVideoQuality = 'medium';
+
+// Fila de ICE candidates para evitar race conditions
+const pendingIceCandidates = {};
+const pendingScreenIceCandidates = {};
+
+// Aplica limite de bitrate nos senders de vídeo
+async function applyVideoBitrate(pc, maxBitrate) {
+    if (!pc || pc.signalingState === 'closed') return;
+    const senders = pc.getSenders();
+    for (const sender of senders) {
+        if (sender.track?.kind !== 'video') continue;
+        try {
+            const params = sender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) {
+                params.encodings = [{}];
+            }
+            params.encodings[0].maxBitrate = maxBitrate;
+            await sender.setParameters(params);
+        } catch (e) {
+            console.warn('Bitrate limit error:', e);
+        }
+    }
+}
+
+// Ajusta qualidade de todas as chamadas ativas baseado na conexão
+function adaptVideoQuality(quality) {
+    if (quality === currentVideoQuality) return;
+    currentVideoQuality = quality;
+    const bitrate = VIDEO_BITRATES[quality];
+    for (const [, callData] of Object.entries(activeCalls)) {
+        if (callData.pc) applyVideoBitrate(callData.pc, bitrate);
+    }
+    const screenBitrate = SCREEN_BITRATES[quality];
+    for (const [, callData] of Object.entries(screenCallMap)) {
+        if (callData.pc) applyVideoBitrate(callData.pc, screenBitrate);
+    }
+    console.log('Video quality adapted to:', quality);
+}
+
+// Drena fila de ICE candidates pendentes
+async function drainPendingIce(fromPeer, pc, queue) {
+    const candidates = queue[fromPeer];
+    if (!candidates || candidates.length === 0) return;
+    for (const candidate of candidates) {
+        try {
+            await pc.addIceCandidate(candidate);
+        } catch (e) {
+            console.warn('Pending ICE candidate error:', e);
+        }
+    }
+    delete queue[fromPeer];
+}
+
 // ===== Setup PeerJS =====
-async function setupPeer(onSuccess, onError) {
+async function setupPeer() {
     if (!window.Peer) {
         await loadScript('https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js');
     }
@@ -28,85 +98,60 @@ async function setupPeer(onSuccess, onError) {
             peerId = makeMemberId(roomId, nickname);
         }
 
-        myPeer = new Peer(peerId, {
-            debug: 2,
-            config: ICE_SERVERS
-        });
+        function createPeer(id, isHostAttempt) {
+            const peer = new Peer(id, {
+                debug: 2,
+                config: ICE_SERVERS
+            });
 
-        myId = peerId;
+            myPeer = peer;
+            myId = id;
 
-        myPeer.on('connection', (conn) => {
-            if (attemptHost) {
-                handleIncomingConnection(conn);
-            }
-        });
-
-        myPeer.on('open', () => {
-            if (settled) return;
-            settled = true;
-            console.log('Peer connected with ID:', myId, 'role:', attemptHost ? 'host' : 'member');
-            resolve({ host: attemptHost });
-        });
-
-        myPeer.on('error', (err) => {
-            console.error('Peer error:', err);
-            if (attemptHost && (err.type === 'unavailable-id' || err.type === 'invalid-id')) {
-                console.log('Host ID taken, switching to member role...');
-                myPeer.destroy();
-                myPeer = null;
-                peerId = makeMemberId(roomId, nickname);
-                myId = peerId;
-                retryAsMember(peerId, onSuccess, onError);
-            } else {
-                reject(err);
-            }
-        });
-
-        myPeer.on('disconnected', () => {
-            console.log('Disconnected from signaling, reconnecting...');
-            setTimeout(() => {
-                if (myPeer && !myPeer.destroyed) {
-                    myPeer.reconnect();
+            peer.on('connection', (conn) => {
+                if (isHostAttempt) {
+                    handleIncomingConnection(conn);
                 }
-            }, 2000);
-        });
+            });
+
+            peer.on('open', () => {
+                if (settled) return;
+                settled = true;
+                console.log('Peer connected with ID:', myId, 'role:', isHostAttempt ? 'host' : 'member');
+                resolve({ host: isHostAttempt });
+            });
+
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                if (isHostAttempt && (err.type === 'unavailable-id' || err.type === 'invalid-id')) {
+                    console.log('Host ID taken, switching to member role...');
+                    peer.destroy();
+                    const memberId = makeMemberId(roomId, nickname);
+                    createPeer(memberId, false);
+                } else if (!settled) {
+                    settled = true;
+                    reject(err);
+                }
+            });
+
+            peer.on('disconnected', () => {
+                console.log('Disconnected from signaling, reconnecting...');
+                setTimeout(() => {
+                    if (myPeer && !myPeer.destroyed) {
+                        myPeer.reconnect();
+                    }
+                }, 2000);
+            });
+        }
+
+        createPeer(peerId, attemptHost);
 
         setTimeout(() => {
             if (!settled) {
+                settled = true;
                 reject(new Error('Connection timeout'));
             }
-        }, 10000);
+        }, 15000);
     });
-}
-
-function retryAsMember(memberPeerId, onSuccess, onError) {
-    console.log('Retrying as member with ID:', memberPeerId);
-    myPeer = new Peer(memberPeerId, {
-        debug: 2,
-        config: ICE_SERVERS
-    });
-    myId = memberPeerId;
-
-    let retrySettled = false;
-    myPeer.on('open', () => {
-        if (retrySettled) return;
-        retrySettled = true;
-        console.log('Retry as member. Peer ID:', myId);
-        onSuccess({ host: false });
-    });
-
-    myPeer.on('error', (err) => {
-        if (retrySettled) return;
-        retrySettled = true;
-        console.error('Retry error:', err);
-        onError(err);
-    });
-
-    setTimeout(() => {
-        if (!retrySettled) {
-            onError(new Error('Retry timeout'));
-        }
-    }, 10000);
 }
 
 function loadScript(src) {
@@ -319,49 +364,40 @@ function handleMessage(data, fromPeer) {
             break;
 
         case 'message':
-            if (data.senderId === myId) break; // Skip own messages (already added in app.js)
-            addChat(data.payload.nickname || data.senderId.substring(0, 6), data.payload.text, 'received');
-            broadcastRelay('message', { text: data.payload.text }, data.senderId);
+            {
+                if (data.senderId === myId) break;
+                const msgNick = data.payload.nickname || peers[data.senderId]?.nick || data.senderId.substring(0, 6);
+                addChat(msgNick, data.payload.text, 'received');
+                broadcastRelay('message', { text: data.payload.text, nickname: msgNick }, data.senderId);
+            }
             break;
 
         case 'image':
-            addChat(data.payload.nickname || data.senderId.substring(0, 6),
-                `<img class="media" src="${data.payload.data}" alt="Imagem">`, 'received');
-            broadcastRelay('image', { data: data.payload.data }, data.senderId);
+            {
+                const imgNick = data.payload.nickname || peers[data.senderId]?.nick || data.senderId.substring(0, 6);
+                addChat(imgNick,
+                    `<img class="media" src="${data.payload.data}" alt="Imagem">`, 'received');
+                broadcastRelay('image', { data: data.payload.data, nickname: imgNick }, data.senderId);
+            }
             break;
 
         case 'file':
-            addChat(data.payload.nickname || data.senderId.substring(0, 6),
-                `<div>📄 ${data.payload.name} (${formatBytes(data.payload.size)})</div>
-                 <a href="${data.payload.data}" download="${data.payload.name}" style="color:var(--accent2);font-size:12px;">⬇️ Baixar</a>`,
-                'received');
-            broadcastRelay('file', { name: data.payload.name, size: data.payload.size, data: data.payload.data, type: data.payload.type }, data.senderId);
+            {
+                const fileNick = data.payload.nickname || peers[data.senderId]?.nick || data.senderId.substring(0, 6);
+                addChat(fileNick,
+                    `<div>📄 ${data.payload.name} (${formatBytes(data.payload.size)})</div>
+                     <a href="${data.payload.data}" download="${data.payload.name}" style="color:var(--accent2);font-size:12px;">⬇️ Baixar</a>`,
+                    'received');
+                broadcastRelay('file', { name: data.payload.name, size: data.payload.size, data: data.payload.data, type: data.payload.type, nickname: fileNick }, data.senderId);
+            }
             break;
 
         case 'voice':
             {
-                if (data.senderId === myId) break; // Skip own messages (already added in app.js)
-                const voiceNick = data.payload.nickname || data.senderId.substring(0, 6);
-                const voiceMsgEl = document.createElement('div');
-                voiceMsgEl.className = 'audio-recording';
-                voiceMsgEl.textContent = `${voiceNick} enviou áudio (${data.payload.duration}s)`;
-                voiceMsgEl.prepend(document.createTextNode('🎙️ '));
-                const vc = $('messages');
-                const vm = document.createElement('div');
-                vm.className = 'message received';
-                const vs = document.createElement('div');
-                vs.className = 'sender'; vs.textContent = voiceNick;
-                vm.appendChild(vs);
-                vm.appendChild(voiceMsgEl);
-                const vt = document.createElement('div');
-                vt.className = 'time';
-                vt.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                vm.appendChild(vt);
-                vc.appendChild(vm);
-                vc.scrollTop = vc.scrollHeight;
-                voiceMsgEl.style.cursor = 'pointer';
-                voiceMsgEl.onclick = () => playVoiceMessage(data.payload.audio);
-                broadcastRelay('voice', { audio: data.payload.audio, duration: data.payload.duration }, data.senderId);
+                if (data.senderId === myId) break;
+                const voiceNick = data.payload.nickname || peers[data.senderId]?.nick || data.senderId.substring(0, 6);
+                addVoiceChat(voiceNick, data.payload.audio, data.payload.duration, 'received');
+                broadcastRelay('voice', { audio: data.payload.audio, duration: data.payload.duration, nickname: voiceNick }, data.senderId);
             }
             break;
 
@@ -397,27 +433,9 @@ function handleMessage(data, fromPeer) {
                         break;
                     case 'voice':
                         {
-                            if (data.senderId === myId) break; // Skip own relayed voice messages (already added in app.js)
+                            if (data.senderId === myId) break;
                             const voiceNick = data.payload.nickname || data.senderId.substring(0, 6);
-                            const voiceMsgEl = document.createElement('div');
-                            voiceMsgEl.className = 'audio-recording';
-                            voiceMsgEl.textContent = `${voiceNick} enviou áudio (${data.payload.duration}s)`;
-                            voiceMsgEl.prepend(document.createTextNode('🎙️ '));
-                            const vc = $('messages');
-                            const vm = document.createElement('div');
-                            vm.className = 'message received';
-                            const vs = document.createElement('div');
-                            vs.className = 'sender'; vs.textContent = voiceNick;
-                            vm.appendChild(vs);
-                            vm.appendChild(voiceMsgEl);
-                            const vt = document.createElement('div');
-                            vt.className = 'time';
-                            vt.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                            vm.appendChild(vt);
-                            vc.appendChild(vm);
-                            vc.scrollTop = vc.scrollHeight;
-                            voiceMsgEl.style.cursor = 'pointer';
-                            voiceMsgEl.onclick = () => playVoiceMessage(data.payload.audio);
+                            addVoiceChat(voiceNick, data.payload.audio, data.payload.duration, 'received');
                         }
                         break;
                     case 'typing':
@@ -468,7 +486,7 @@ function handleMessage(data, fromPeer) {
                 relayCallSignal(data.type, data);
             }
             if (data.targetId === myId || !data.targetId) {
-                handleRemoteOffer(data.senderId, data.payload.sdp);
+                handleRemoteOffer(data.senderId, data.payload.sdp, data.payload);
             }
             break;
 
@@ -702,7 +720,7 @@ async function startCall(type) {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: type === 'video'
+            video: type === 'video' ? VIDEO_CONSTRAINTS[currentVideoQuality] : false
         });
         myStream = stream;
         addSelfCard();
@@ -738,55 +756,76 @@ async function startCall(type) {
 }
 
 async function initiateP2PCall(targetId, stream, type) {
+    // Fechar PC antigo se existir (previne áudio duplicado)
+    if (activeCalls[targetId]?.pc) {
+        try { activeCalls[targetId].pc.close(); } catch (e) {}
+    }
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     if (stream) {
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
     }
 
-    activeCalls[targetId] = { pc, stream: null };
+    activeCalls[targetId] = { pc, stream: null, type, iceRestartAttempts: 0 };
 
     pc.ontrack = (event) => {
-        const stream = event.streams[0];
-        activeCalls[targetId].stream = stream;
+        const remoteStream = event.streams[0];
+        activeCalls[targetId].stream = remoteStream;
         const existingVid = document.getElementById(`remote-video-${targetId}`);
         if (existingVid) {
-            existingVid.srcObject = stream;
+            existingVid.srcObject = remoteStream;
         } else {
-            addRemoteVideo(targetId, stream);
+            addRemoteVideo(targetId, remoteStream);
         }
     };
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {
-            const iceData = {
+            relayCallMessage(targetId, 'relay-ice-candidate', {
                 candidate: {
                     candidate: event.candidate.candidate,
                     sdpMid: event.candidate.sdpMid,
                     sdpMLineIndex: event.candidate.sdpMLineIndex
                 }
-            };
-            if (isHost) {
-                const info = peers[targetId];
-                if (info?.conn?.open) {
-                    info.conn.send({
-                        type: 'relay-ice-candidate',
-                        senderId: myId,
-                        targetId: targetId,
-                        roomId: roomId,
-                        payload: iceData
+            });
+        }
+    };
+
+    // ICE restart automático em caso de falha
+    pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        if (state === 'failed') {
+            const callData = activeCalls[targetId];
+            if (callData && callData.iceRestartAttempts < 3) {
+                callData.iceRestartAttempts++;
+                console.log(`ICE restart attempt ${callData.iceRestartAttempts} for ${targetId}`);
+                pc.createOffer({ iceRestart: true }).then(offer => {
+                    return pc.setLocalDescription(offer);
+                }).then(() => {
+                    relayCallMessage(targetId, 'relay-call-offer', {
+                        sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
+                        type: callData.type,
+                        iceRestart: true
                     });
-                }
-            } else {
-                const hostInfo = peers[hostPeerId];
-                if (hostInfo?.conn?.open) {
-                    hostInfo.conn.send({
-                        type: 'relay-ice-candidate',
-                        senderId: myId,
-                        targetId: targetId,
-                        roomId: roomId,
-                        payload: iceData
-                    });
+                }).catch(e => console.error('ICE restart failed:', e));
+            }
+        } else if (state === 'connected') {
+            const callData = activeCalls[targetId];
+            if (callData) callData.iceRestartAttempts = 0;
+        }
+    };
+
+    pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+            // Só remove se ICE restart já esgotou
+            const callData = activeCalls[targetId];
+            if (!callData || callData.iceRestartAttempts >= 3) {
+                removeVideoCard(targetId);
+                delete activeCalls[targetId];
+                if (Object.keys(activeCalls).length === 0) {
+                    callActive = false;
+                    updateCallUI();
                 }
             }
         }
@@ -794,6 +833,11 @@ async function initiateP2PCall(targetId, stream, type) {
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
+
+    // Aplicar limite de bitrate após conectar
+    if (type === 'video') {
+        applyVideoBitrate(pc, VIDEO_BITRATES[currentVideoQuality]);
+    }
 
     relayCallMessage(targetId, 'relay-call-offer', { sdp: { type: offer.type, sdp: offer.sdp }, type: type });
     console.log('P2P call to', targetId);
@@ -860,19 +904,40 @@ function relayCallSignal(type, data) {
     });
 }
 
-function handleRemoteOffer(fromPeer, sdp) {
+function handleRemoteOffer(fromPeer, sdp, payload) {
+    // Se é ICE restart, reutilizar PC existente
+    if (payload?.iceRestart && activeCalls[fromPeer]?.pc) {
+        const existingPc = activeCalls[fromPeer].pc;
+        existingPc.setRemoteDescription(sdp)
+            .then(async () => {
+                const answer = await existingPc.createAnswer();
+                await existingPc.setLocalDescription(answer);
+                relayCallMessage(fromPeer, 'relay-call-answer-sdp', {
+                    sdp: { type: existingPc.localDescription.type, sdp: existingPc.localDescription.sdp }
+                });
+                console.log('ICE restart answer sent to', fromPeer);
+            })
+            .catch(e => console.error('ICE restart answer error:', e));
+        return;
+    }
+
+    // Fechar PC antigo antes de criar novo (previne áudio órfão / eco)
+    if (activeCalls[fromPeer]?.pc) {
+        try { activeCalls[fromPeer].pc.close(); } catch (e) {}
+    }
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    activeCalls[fromPeer] = { pc, stream: null };
+    activeCalls[fromPeer] = { pc, stream: null, iceRestartAttempts: 0 };
 
     pc.ontrack = (event) => {
-        const stream = event.streams[0];
-        activeCalls[fromPeer].stream = stream;
+        const remoteStream = event.streams[0];
+        activeCalls[fromPeer].stream = remoteStream;
         const existingVid = document.getElementById(`remote-video-${fromPeer}`);
         if (existingVid) {
-            existingVid.srcObject = stream;
+            existingVid.srcObject = remoteStream;
         } else {
-            addRemoteVideo(fromPeer, stream);
+            addRemoteVideo(fromPeer, remoteStream);
         }
     };
 
@@ -888,25 +953,55 @@ function handleRemoteOffer(fromPeer, sdp) {
         }
     };
 
+    // ICE restart automático
+    pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        if (state === 'failed') {
+            const callData = activeCalls[fromPeer];
+            if (callData && callData.iceRestartAttempts < 3) {
+                callData.iceRestartAttempts++;
+                console.log(`ICE restart (receiver) attempt ${callData.iceRestartAttempts} for ${fromPeer}`);
+                pc.createOffer({ iceRestart: true }).then(offer => {
+                    return pc.setLocalDescription(offer);
+                }).then(() => {
+                    relayCallMessage(fromPeer, 'relay-call-offer', {
+                        sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
+                        type: callData.type || callType,
+                        iceRestart: true
+                    });
+                }).catch(e => console.error('ICE restart failed:', e));
+            }
+        } else if (state === 'connected') {
+            const callData = activeCalls[fromPeer];
+            if (callData) callData.iceRestartAttempts = 0;
+        }
+    };
+
     pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-            removeVideoCard(fromPeer);
-            delete activeCalls[fromPeer];
-            if (Object.keys(activeCalls).length === 0) {
-                callActive = false;
-                updateCallUI();
+            const callData = activeCalls[fromPeer];
+            if (!callData || callData.iceRestartAttempts >= 3) {
+                removeVideoCard(fromPeer);
+                delete activeCalls[fromPeer];
+                if (Object.keys(activeCalls).length === 0) {
+                    callActive = false;
+                    updateCallUI();
+                }
             }
         }
     };
 
     pc.setRemoteDescription(sdp)
         .then(async () => {
+            // Drenar ICE candidates que chegaram antes do setRemoteDescription
+            await drainPendingIce(fromPeer, pc, pendingIceCandidates);
+
             if (!myStream) {
                 const hasVideo = sdp.sdp && sdp.sdp.includes('m=video');
                 try {
                     myStream = await navigator.mediaDevices.getUserMedia({
                         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-                        video: hasVideo
+                        video: hasVideo ? VIDEO_CONSTRAINTS[currentVideoQuality] : false
                     });
                     callActive = true;
                     callType = hasVideo ? 'video' : 'audio';
@@ -931,6 +1026,13 @@ function handleRemoteOffer(fromPeer, sdp) {
             }
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
+
+            // Aplicar bitrate após negociação
+            const hasVideo = sdp.sdp && sdp.sdp.includes('m=video');
+            if (hasVideo) {
+                applyVideoBitrate(pc, VIDEO_BITRATES[currentVideoQuality]);
+            }
+
             relayCallMessage(fromPeer, 'relay-call-answer-sdp', {
                 sdp: {
                     type: pc.localDescription.type,
@@ -948,7 +1050,9 @@ function handleRemoteAnswer(fromPeer, sdp) {
     const callData = activeCalls[fromPeer];
     if (!callData) return;
     callData.pc.setRemoteDescription(sdp)
-        .then(() => {
+        .then(async () => {
+            // Drenar ICE candidates que chegaram antes do answer
+            await drainPendingIce(fromPeer, callData.pc, pendingIceCandidates);
             console.log('Call answered, waiting for remote tracks via ontrack');
         })
         .catch(e => console.error('Answer set error:', e));
@@ -956,15 +1060,22 @@ function handleRemoteAnswer(fromPeer, sdp) {
 
 function handleIceCandidate(fromPeer, candidate) {
     const callData = activeCalls[fromPeer];
-    if (!callData) return;
-    const iceObj = {
+    const iceObj = new RTCIceCandidate({
         candidate: candidate.candidate || '',
         sdpMid: candidate.sdpMid || '0',
         sdpMLineIndex: candidate.sdpMLineIndex ?? 0,
         usernameFragment: candidate.usernameFragment || ''
-    };
+    });
+
+    // Se PC não existe ainda ou remoteDescription não foi definida, enfileirar
+    if (!callData?.pc || !callData.pc.remoteDescription) {
+        if (!pendingIceCandidates[fromPeer]) pendingIceCandidates[fromPeer] = [];
+        pendingIceCandidates[fromPeer].push(iceObj);
+        return;
+    }
+
     callData.pc.addIceCandidate(iceObj)
-        .catch(e => console.error('ICE candidate error:', e));
+        .catch(e => console.warn('ICE candidate error:', e));
 }
 
 function endCallTo(peerId) {
@@ -1069,7 +1180,12 @@ async function toggleScreenShare() {
     } else {
         try {
             screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: { cursor: 'always' },
+                video: {
+                    cursor: 'always',
+                    width: { ideal: 1920, max: 1920 },
+                    height: { ideal: 1080, max: 1080 },
+                    frameRate: { ideal: 15, max: 30 }
+                },
                 audio: true
             });
 
@@ -1111,6 +1227,11 @@ async function toggleScreenShare() {
 }
 
 async function initiateScreenShareToPeer(targetId) {
+    // Fechar PC antigo se existir
+    if (screenCallMap[targetId]?.pc) {
+        try { screenCallMap[targetId].pc.close(); } catch (e) {}
+    }
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     let videoTrackAdded = false;
@@ -1120,7 +1241,11 @@ async function initiateScreenShareToPeer(targetId) {
                 pc.addTrack(track, screenStream);
                 videoTrackAdded = true;
             } else if (track.kind === 'audio') {
-                pc.addTrack(track, screenStream);
+                // Só envia áudio do sistema se NÃO houver chamada ativa
+                // (evita loop de eco: speaker → getDisplayMedia → peer → speaker)
+                if (!callActive) {
+                    pc.addTrack(track, screenStream);
+                }
             }
         });
     }
@@ -1183,6 +1308,8 @@ async function initiateScreenShareToPeer(targetId) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
+    applyVideoBitrate(pc, SCREEN_BITRATES[currentVideoQuality]);
+
     const screenData = {
         type: 'relay-screen-offer',
         senderId: myId,
@@ -1205,6 +1332,11 @@ async function initiateScreenShareToPeer(targetId) {
 }
 
 function handleScreenShareOffer(fromPeer, sdp) {
+    // Fechar PC antigo se existir
+    if (screenCallMap[fromPeer]?.pc) {
+        try { screenCallMap[fromPeer].pc.close(); } catch (e) {}
+    }
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     screenCallMap[fromPeer] = { pc, stream: null };
@@ -1237,8 +1369,10 @@ function handleScreenShareOffer(fromPeer, sdp) {
 
     pc.setRemoteDescription(sdp)
         .then(async () => {
+            await drainPendingIce(fromPeer, pc, pendingScreenIceCandidates);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
+            applyVideoBitrate(pc, SCREEN_BITRATES[currentVideoQuality]);
             relayScreenMessage(fromPeer, 'relay-screen-answer', {
                 sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
             });
@@ -1253,21 +1387,30 @@ function handleScreenShareAnswer(fromPeer, sdp) {
     const callData = screenCallMap[fromPeer];
     if (!callData) return;
     callData.pc.setRemoteDescription(sdp)
-        .then(() => console.log('Screen share answered'))
+        .then(async () => {
+            await drainPendingIce(fromPeer, callData.pc, pendingScreenIceCandidates);
+            console.log('Screen share answered');
+        })
         .catch(e => console.error('Screen share answer set error:', e));
 }
 
 function handleScreenShareIce(fromPeer, candidate) {
     const callData = screenCallMap[fromPeer];
-    if (!callData) return;
-    const iceObj = {
+    const iceObj = new RTCIceCandidate({
         candidate: candidate.candidate || '',
         sdpMid: candidate.sdpMid || '0',
         sdpMLineIndex: candidate.sdpMLineIndex ?? 0,
         usernameFragment: candidate.usernameFragment || ''
-    };
+    });
+
+    if (!callData?.pc || !callData.pc.remoteDescription) {
+        if (!pendingScreenIceCandidates[fromPeer]) pendingScreenIceCandidates[fromPeer] = [];
+        pendingScreenIceCandidates[fromPeer].push(iceObj);
+        return;
+    }
+
     callData.pc.addIceCandidate(iceObj)
-        .catch(e => console.error('Screen share ICE candidate error:', e));
+        .catch(e => console.warn('Screen share ICE candidate error:', e));
 }
 
 async function stopScreenShare() {
@@ -1347,7 +1490,7 @@ function addRemoteScreen(peerId, stream) {
     card.className = 'video-card screen-card';
     card.id = `vscreen-${peerId}`;
     card.innerHTML = `
-        <video id="remote-screen-video-${peerId}" autoplay playsinline></video>
+        <video id="remote-screen-video-${peerId}" autoplay playsinline muted></video>
         <div class="label"><span class="status-dot"></span> 🖥️ ${DOMPurify.sanitize(nick, {ALLOW_TAGS: [], ALLOW_ATTR: []})}</div>
         <button class="btn-fullscreen" onclick="toggleFullscreen('remote-screen-video-${peerId}')" title="Tela cheia">⛶</button>
         <button class="btn-close-screen" onclick="stopScreenShareTo('${peerId}')" title="Fechar">✕</button>
@@ -1454,6 +1597,7 @@ function updateCallUI() {
     $('call-screen-btn').style.display = Object.keys(peers).length > 0 || callActive ? '' : 'none';
     const callInfo = $('active-call-info');
     callInfo.classList.toggle('show', hasCall);
+    $('room-body').classList.toggle('has-call', hasCall);
     if (hasCall) {
         callInfo.textContent = `📞 Chamada ${callType === 'video' ? 'de vídeo' : 'de áudio'} em andamento`;
         startCallTimer();

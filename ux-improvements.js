@@ -8,30 +8,43 @@ let replyTo = null; // { sender, text, id }
 let searchQuery = '';
 let searchResults = [];
 let searchIndex = -1;
+const REACTIONS = ['👍','❤️','😂','😮','😢','🙏'];
 
 // ===== 1. PANEL RESIZE =====
 function initResizeHandle() {
     const handle = $('resize-handle');
     const chatPanel = $('chat-panel');
     const roomBody = $('room-body');
+    if (!handle || !chatPanel || !roomBody) return;
+
     let isResizing = false;
 
-    // Load saved ratio
-    const saved = localStorage.getItem('howapp-resize-ratio');
-    if (saved) {
-        const ratio = parseFloat(saved);
-        const minRatio = 0.2;
-        const clamped = Math.max(minRatio, Math.min(1 - minRatio, ratio));
-        chatPanel.style.flex = clamped;
-        const other = roomBody.querySelector('.video-grid');
-        other.style.flex = 1;
+    function isVertical() {
+        return window.innerWidth <= 900;
     }
+
+    function applySavedSize() {
+        const key = isVertical() ? 'howapp-chat-height' : 'howapp-chat-width';
+        const saved = localStorage.getItem(key);
+        if (!saved) return;
+        const val = parseInt(saved, 10);
+        if (isVertical()) {
+            chatPanel.style.width = '';
+            chatPanel.style.height = Math.max(160, val) + 'px';
+        } else {
+            chatPanel.style.height = '';
+            chatPanel.style.width = Math.max(260, val) + 'px';
+        }
+    }
+
+    applySavedSize();
+    window.addEventListener('resize', applySavedSize);
 
     function startResize(e) {
         e.preventDefault();
         isResizing = true;
         handle.classList.add('active');
-        document.body.style.cursor = 'ew-resize';
+        document.body.style.cursor = isVertical() ? 'row-resize' : 'col-resize';
         document.body.style.userSelect = 'none';
         document.addEventListener('mousemove', doResize);
         document.addEventListener('mouseup', stopResize);
@@ -43,14 +56,26 @@ function initResizeHandle() {
         if (!isResizing) return;
         e.preventDefault();
         const rect = roomBody.getBoundingClientRect();
-        const x = (e.clientX || (e.touches && e.touches[0].clientX)) || 0;
-        const ratio = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
-        const min = 0.2;
-        const clamped = Math.max(min, Math.min(1 - min, ratio));
-        chatPanel.style.flex = clamped;
-        const other = roomBody.querySelector('.video-grid');
-        other.style.flex = 1;
-        localStorage.setItem('howapp-resize-ratio', clamped);
+
+        if (isVertical()) {
+            const y = (e.clientY || (e.touches && e.touches[0].clientY)) || 0;
+            const chatHeight = rect.bottom - y;
+            const minH = 160;
+            const maxH = rect.height - 120;
+            const clamped = Math.max(minH, Math.min(maxH, chatHeight));
+            chatPanel.style.height = clamped + 'px';
+            chatPanel.style.width = '';
+            localStorage.setItem('howapp-chat-height', clamped);
+        } else {
+            const x = (e.clientX || (e.touches && e.touches[0].clientX)) || 0;
+            const chatWidth = rect.right - x;
+            const minW = 260;
+            const maxW = rect.width - 200;
+            const clamped = Math.max(minW, Math.min(maxW, chatWidth));
+            chatPanel.style.width = clamped + 'px';
+            chatPanel.style.height = '';
+            localStorage.setItem('howapp-chat-width', clamped);
+        }
     }
 
     function stopResize() {
@@ -66,6 +91,14 @@ function initResizeHandle() {
 
     handle.addEventListener('mousedown', startResize);
     handle.addEventListener('touchstart', startResize, { passive: false });
+
+    // Double-click to reset to default
+    handle.addEventListener('dblclick', () => {
+        chatPanel.style.width = '';
+        chatPanel.style.height = '';
+        localStorage.removeItem('howapp-chat-width');
+        localStorage.removeItem('howapp-chat-height');
+    });
 }
 
 // ===== 2. TOAST IMPROVED =====
@@ -489,15 +522,16 @@ document.addEventListener('DOMContentLoaded', () => {
 const originalAddChat = window.addChat;
 window.addChat = function(sender, content, type) {
     const result = originalAddChat ? originalAddChat(sender, content, type) : null;
-    const messages = $('messages');
-    const lastMsg = messages.lastElementChild;
-    if (lastMsg && lastMsg.classList.contains('message') && type !== 'system') {
-        lastMsg._msgId = Date.now() + Math.random();
-        lastMsg.dataset.msgId = lastMsg._msgId;
-        addReactionBtn(lastMsg);
-
-        // Animate in
-        lastMsg.style.animation = 'fadeIn 0.2s ease';
+    try {
+        const messages = $('messages');
+        const lastMsg = messages.lastElementChild;
+        if (lastMsg && lastMsg.classList.contains('message') && type !== 'system') {
+            lastMsg._msgId = Date.now() + Math.random();
+            lastMsg.dataset.msgId = lastMsg._msgId;
+            lastMsg.style.animation = 'fadeIn 0.2s ease';
+        }
+    } catch (e) {
+        console.warn('addChat enhancement error:', e);
     }
     return result;
 };
@@ -543,6 +577,13 @@ function detectConnectionQuality() {
         else if (latency > 100) { bars = 4; status = 'good'; }
 
         updateConnectionStatus(status, Math.round(latency), bars);
+
+        // Qualidade adaptativa de vídeo baseada na latência
+        if (typeof adaptVideoQuality === 'function' && callActive) {
+            if (latency > 300) adaptVideoQuality('low');
+            else if (latency > 150) adaptVideoQuality('medium');
+            else adaptVideoQuality('high');
+        }
     }).catch(() => {
         // Fallback if getStats fails (e.g., privacy restrictions)
         updateConnectionStatus('excellent', 20, 5);

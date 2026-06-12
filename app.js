@@ -244,6 +244,26 @@ function addSystem(text) {
     addChat('', text, 'system');
 }
 
+function addVoiceChat(sender, audioData, duration, type) {
+    const c = $('messages');
+    const d = document.createElement('div');
+    d.className = `message ${type}`;
+    if (type !== 'system') {
+        const s = document.createElement('div');
+        s.className = 'sender';
+        s.textContent = sender;
+        d.appendChild(s);
+    }
+    const player = createAudioPlayer(audioData, duration);
+    d.appendChild(player);
+    const t = document.createElement('div');
+    t.className = 'time';
+    t.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    d.appendChild(t);
+    c.appendChild(d);
+    c.scrollTop = c.scrollHeight;
+}
+
 // ===== Media =====
 function sendImage() { $('file-input').click(); }
 
@@ -305,27 +325,21 @@ function startVoiceRecording() {
                 const blob = new Blob(recChunks, { type: 'audio/webm' });
                 const url = URL.createObjectURL(blob);
                 const tempAudio = new Audio(url);
-                tempAudio.addEventListener('loadedmetadata', () => {
-                    const duration = Math.round(tempAudio.duration);
+                const finishSend = (duration) => {
                     const reader = new FileReader();
                     reader.onload = () => {
-                        addChat(nickname, '<div class="audio-recording">🎙️ Áudio enviado</div>', 'sent');
+                        addVoiceChat(nickname, reader.result, duration, 'sent');
                         if (isHost) { broadcastRelay('voice', { audio: reader.result, duration: duration }); } else { sendToHost('voice', { audio: reader.result, duration: duration }); }
                     };
                     reader.readAsDataURL(blob);
                     stream.getTracks().forEach(t => t.stop());
                     URL.revokeObjectURL(url);
+                };
+                tempAudio.addEventListener('loadedmetadata', () => {
+                    finishSend(Math.round(tempAudio.duration));
                 });
                 tempAudio.addEventListener('error', () => {
-                    const duration = Math.round(recChunks.reduce((a, b) => a + b.size, 0) / 16000);
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        addChat(nickname, '<div class="audio-recording">🎙️ Áudio enviado</div>', 'sent');
-                        if (isHost) { broadcastRelay('voice', { audio: reader.result, duration: duration }); } else { sendToHost('voice', { audio: reader.result, duration: duration }); }
-                    };
-                    reader.readAsDataURL(blob);
-                    stream.getTracks().forEach(t => t.stop());
-                    URL.revokeObjectURL(url);
+                    finishSend(Math.round(recChunks.reduce((a, b) => a + b.size, 0) / 16000));
                 });
                 recMedia = null;
                 recChunks = [];
@@ -351,6 +365,88 @@ function stopVoiceRecording() {
 function playVoiceMessage(data) {
     const audio = new Audio(data);
     audio.play().catch(e => console.error('Play error:', e));
+}
+
+function createAudioPlayer(audioData, duration) {
+    const player = document.createElement('div');
+    player.className = 'audio-player';
+
+    const playBtn = document.createElement('button');
+    playBtn.className = 'audio-play-btn';
+    playBtn.textContent = '▶';
+
+    const track = document.createElement('div');
+    track.className = 'audio-track';
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'audio-progress-bar';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'audio-progress-fill';
+    progressBar.appendChild(progressFill);
+
+    const timeLabel = document.createElement('div');
+    timeLabel.className = 'audio-time';
+    const dur = duration || 0;
+    timeLabel.textContent = '0:00 / ' + formatAudioTime(dur);
+
+    track.appendChild(progressBar);
+    track.appendChild(timeLabel);
+    player.appendChild(playBtn);
+    player.appendChild(track);
+
+    const audio = new Audio(audioData);
+    let playing = false;
+
+    audio.addEventListener('loadedmetadata', () => {
+        if (audio.duration && isFinite(audio.duration)) {
+            timeLabel.textContent = '0:00 / ' + formatAudioTime(Math.round(audio.duration));
+        }
+    });
+
+    audio.addEventListener('timeupdate', () => {
+        if (audio.duration && isFinite(audio.duration)) {
+            const pct = (audio.currentTime / audio.duration) * 100;
+            progressFill.style.width = pct + '%';
+            timeLabel.textContent = formatAudioTime(Math.round(audio.currentTime)) + ' / ' + formatAudioTime(Math.round(audio.duration));
+        }
+    });
+
+    audio.addEventListener('ended', () => {
+        playing = false;
+        playBtn.textContent = '▶';
+        progressFill.style.width = '0%';
+        if (audio.duration && isFinite(audio.duration)) {
+            timeLabel.textContent = '0:00 / ' + formatAudioTime(Math.round(audio.duration));
+        }
+    });
+
+    playBtn.onclick = () => {
+        if (playing) {
+            audio.pause();
+            playing = false;
+            playBtn.textContent = '▶';
+        } else {
+            audio.play().catch(e => console.error('Play error:', e));
+            playing = true;
+            playBtn.textContent = '⏸';
+        }
+    };
+
+    progressBar.onclick = (e) => {
+        if (audio.duration && isFinite(audio.duration)) {
+            const rect = progressBar.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            audio.currentTime = pct * audio.duration;
+        }
+    };
+
+    return player;
+}
+
+function formatAudioTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m + ':' + String(s).padStart(2, '0');
 }
 
 // ===== Typing Indicator =====
@@ -407,22 +503,9 @@ function insertEmoji(emoji) {
 
 // ===== Share =====
 function updateShareLink() {
-    const shareUrl = `${location.origin}${location.pathname}?room=${roomId}`;
-    $('share-link').value = shareUrl;
     const url = new URL(location);
     url.searchParams.set('room', roomId);
     history.replaceState(null, '', url);
-}
-
-function copyShareLink() {
-    const inp = $('share-link');
-    inp.select();
-    navigator.clipboard?.writeText(inp.value).then(() => {
-        showToast('Link copiado!');
-    }).catch(() => {
-        document.execCommand('copy');
-        showToast('Link copiado!');
-    });
 }
 
 function copyRoomId() {

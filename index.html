@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>HowApp</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" integrity="sha512-Y1p/STLW/B+l+MPJ5K5OdILMwJa2gMFXXmC/qsyDuGH9uc1MZMUo6/8YQUg9Ut4ns8KGCrCtt+58UwmNFFiVvA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -62,16 +62,9 @@
             </div>
         </div>
 
-        <!-- Share bar -->
-        <div class="share-bar">
-            <span>📋 Compartilhar:</span>
-            <input type="text" id="share-link" readonly>
-            <button onclick="copyShareLink()">Copiar Link</button>
+        <!-- Share & Invite bar -->
+        <div class="share-bar" id="invite-bar">
             <button onclick="copyRoomId()" id="btn-copy-id" style="background: var(--bg3);">Copiar ID</button>
-        </div>
-
-        <!-- Invite bar -->
-        <div class="invite-bar" id="invite-bar">
             <span>👤 Convidar:</span>
             <input type="text" id="invite-name" placeholder="Nome do convidado" maxlength="20" onkeydown="if(event.key==='Enter') generateInviteLink()">
             <button onclick="generateInviteLink()">Gerar Link</button>
@@ -95,6 +88,9 @@
                     <div>👆 Use os botões abaixo para iniciar uma chamada de áudio ou vídeo</div>
                 </div>
             </div>
+
+            <!-- Resize handle -->
+            <div class="resize-handle" id="resize-handle"></div>
 
             <!-- Chat panel -->
             <div class="chat-panel" id="chat-panel">
